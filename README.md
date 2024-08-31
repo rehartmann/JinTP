@@ -11,6 +11,6 @@ engine for Python.
     procedure Main is
        D : Dictionary;
     begin
-      Insert (D, "name", "John");
-      Put_Line (Render ("template", D));
+       Insert (D, "name", "John");
+       Put_Line (Render ("template", D));
     end Main;
