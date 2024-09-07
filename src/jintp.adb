@@ -6,10 +6,10 @@ with Ada.Calendar;
 with Ada.Unchecked_Deallocation;
 with Ada.Characters.Handling;
 with Ada.Exceptions;
+with Ada.Text_IO;
 
 with Jintp.Input;
 with Jintp.Scanner;
-with Ada.Text_IO;
 
 package body Jintp is
 
@@ -85,7 +85,22 @@ package body Jintp is
 
    type Statement_Kind is (If_Statement, Elif_Statement, Else_Statement,
                            Endif_Statement, For_Statement, Endfor_Statement,
-                           Include_Statement);
+                           Include_Statement, Macro_Statement,
+                           Endmacro_Statement);
+
+   type Parameter (Has_Default_Value : Boolean := False) is record
+      Name : Unbounded_String;
+      case Has_Default_Value is
+         when True =>
+            Default_Value : Expression_Value;
+         when False =>
+            null;
+      end case;
+   end record;
+
+   package Parameter_Vectors is new
+     Ada.Containers.Vectors (Index_Type => Positive,
+                             Element_Type => Parameter);
 
    type Statement (Kind : Statement_Kind := If_Statement) is record
       case Kind is
@@ -97,6 +112,9 @@ package body Jintp is
             For_Expression : Expression_Access;
          when Include_Statement =>
             Filename : Unbounded_String;
+         when Macro_Statement =>
+            Macro_Name : Unbounded_String;
+            Macro_Parameters : Parameter_Vectors.Vector;
          when others =>
             null;
       end case;
@@ -123,10 +141,27 @@ package body Jintp is
 
    use Template_Element_Vectors;
 
+   type Macro is record
+      Parameters : Parameter_Vectors.Vector;
+      Elements : Template_Element_Vectors.Vector;
+   end record;
+
+   type Macro_Access is access Macro;
+
+   procedure Free_Macro is new Ada.Unchecked_Deallocation
+     (Macro, Macro_Access);
+
+   package Macro_Maps is new
+     Ada.Containers.Hashed_Maps (Key_Type => Unbounded_String,
+                                 Element_Type => Macro_Access,
+                                 Hash => Hash,
+                                 Equivalent_Keys => "=");
+
    type Template is new Ada.Finalization.Limited_Controlled with record
       Timestamp : Time;
       Filename : Unbounded_String;
       Elements : Template_Element_Vectors.Vector;
+      Macros : Macro_Maps.Map;
    end record;
 
    overriding procedure Finalize (Self : in out Template);
@@ -155,9 +190,12 @@ package body Jintp is
             Value : Expression_Value;
          when Variable =>
             Variable_Name : Unbounded_String;
-         when Operator | Filter | Test =>
+         when Filter | Test =>
             Name : Unbounded_String;
             Arguments : Expression_Access_Array (1 .. Argument_Capacity);
+         when Operator =>
+            Operator_Name : Unbounded_String;
+            Named_Arguments : Named_Argument_Vectors.Vector;
       end case;
    end record;
 
@@ -169,12 +207,19 @@ package body Jintp is
       if Expr = null then
          return;
       end if;
-      if Expr.Kind = Operator or else Expr.Kind = Filter or else Expr.Kind = Test then
-         for I in Expr.Arguments'First ..  Expr.Arguments'Last
-         loop
-            Delete_Expression (Expr.Arguments (I));
-         end loop;
-      end if;
+      case Expr.Kind is
+         when Filter | Test =>
+            for I in Expr.Arguments'First ..  Expr.Arguments'Last
+            loop
+               Delete_Expression (Expr.Arguments (I));
+            end loop;
+         when Operator =>
+            for E of Expr.Named_Arguments loop
+               Delete_Expression (E.Argument);
+            end loop;
+         when others =>
+            null;
+      end case;
       Free_Expression (Expr);
    end Delete_Expression;
 
@@ -194,17 +239,27 @@ package body Jintp is
       end if;
    end Init;
 
+   function Element (Source : Dictionary;
+                     Key : Unbounded_String)
+                     return Expression_Value is
+   begin
+      return Source.Assocs.Value_Assocs
+        ((Kind => String_Expression_Value,
+          S => Key));
+   end Element;
+
    package Expression_Parser is
 
-      function Parse (Scanner : in out Jintp.Scanner.Scanner_State;
-                      Input : in out Jintp.Input.Character_Iterator'Class;
-                      Settings : Environment)
-                      return Jintp.Expression_Access;
+      function Parse
+        (Scanner : in out Jintp.Scanner.Scanner_State;
+         Input : in out Jintp.Input.Character_Iterator'Class;
+         Settings : Environment)
+         return Jintp.Expression_Access;
 
-      function Parse_With_End (
-                      Input : in out Jintp.Input.Character_Iterator'Class;
-                      Settings : Environment)
-                      return Jintp.Expression_Access;
+      function Parse_With_End
+        (Input : in out Jintp.Input.Character_Iterator'Class;
+         Settings : Environment)
+         return Jintp.Expression_Access;
 
    end Expression_Parser;
 
@@ -220,7 +275,55 @@ package body Jintp is
                         Name : Unbounded_String)
                         return Expression_Value is abstract;
 
+      function Get_Macro (Resolver : Variable_Resolver;
+                          Name : Unbounded_String)
+                          return Macro_Access is abstract;
+
    end Resolvers;
+
+   type Dictionary_Resolver is new Resolvers.Variable_Resolver with record
+      Values : Dictionary;
+      Template_Ref : access constant Template;
+   end record;
+
+   overriding function Resolve (Resolver : Dictionary_Resolver;
+                                Name : Unbounded_String)
+                                return Expression_Value;
+
+   overriding function Get_Macro (Resolver : Dictionary_Resolver;
+                       Name : Unbounded_String)
+                       return Macro_Access;
+
+   overriding function Resolve (Resolver : Dictionary_Resolver;
+                                Name : Unbounded_String)
+                                return Expression_Value is
+   begin
+      return Element (Resolver.Values, Name);
+   exception
+      when Constraint_Error =>
+         raise Template_Error with "'" & To_String (Name) & "' is undefined";
+   end Resolve;
+
+   use Macro_Maps;
+
+   overriding function Get_Macro (Resolver : Dictionary_Resolver;
+                       Name : Unbounded_String)
+                       return Macro_Access is
+      Position : Macro_Maps.Cursor;
+   begin
+      if Resolver.Template_Ref = null then
+         return null;
+      end if;
+      Position := Macro_Maps.Find (Resolver.Template_Ref.Macros, Name);
+      if Position = Macro_Maps.No_Element then
+         return null;
+      end if;
+      return Element (Position);
+   end Get_Macro;
+
+   function Evaluate (Source : Expression;
+                      Resolver : Resolvers.Variable_Resolver'class)
+                      return Expression_Value;
 
    package Statement_Parser is
 
@@ -289,26 +392,36 @@ package body Jintp is
       Self.Cached_Templates.Cleanup;
    end Finalize;
 
-   overriding procedure Finalize (Self : in out Template) is
-      Current : Template_Element_Vectors.Cursor := First (Self.Elements);
-      Element : Template_Element;
+   procedure Cleanup (Element : in out Template_Element) is
    begin
-      while Current /= Template_Element_Vectors.No_Element loop
-         Element := Template_Element_Vectors.Element (Current);
-         case Element.Kind is
-            when Expression_Element =>
-               Delete_Expression (Element.Expr);
-            when Statement_Element =>
-               case Element.Stmt.Kind is
-                  when If_Statement | Elif_Statement =>
-                     Delete_Expression (Element.Stmt.If_Condition);
-                  when For_Statement =>
-                     Delete_Expression (Element.Stmt.For_Expression);
-                  when others =>
-                     null;
-               end case;
-         end case;
-         Next (Current);
+      case Element.Kind is
+         when Expression_Element =>
+            Delete_Expression (Element.Expr);
+         when Statement_Element =>
+            case Element.Stmt.Kind is
+               when If_Statement | Elif_Statement =>
+                  Delete_Expression (Element.Stmt.If_Condition);
+               when For_Statement =>
+                  Delete_Expression (Element.Stmt.For_Expression);
+               when others =>
+                  null;
+            end case;
+      end case;
+   end Cleanup;
+
+   overriding procedure Finalize (Self : in out Template) is
+      Macro : Macro_Access;
+   begin
+      for E of Self.Elements loop
+         Cleanup (E);
+      end loop;
+
+      for C in Self.Macros.Iterate loop
+         Macro := Element (C);
+         for E of Macro.Elements loop
+            Cleanup (E);
+         end loop;
+         Free_Macro (Macro);
       end loop;
    end Finalize;
 
@@ -322,7 +435,8 @@ package body Jintp is
    procedure Free_Stream_Element_Array is new Ada.Unchecked_Deallocation
      (Stream_Element_Array, Stream_Element_Array_Access);
 
-   overriding function Next (Source : in out File_Parser_Input) return Character;
+   overriding function Next (Source : in out File_Parser_Input)
+                             return Character;
 
    overriding procedure Back (Source : in out File_Parser_Input);
 
@@ -330,7 +444,8 @@ package body Jintp is
                     Pattern : String;
                     Matches : out Boolean);
 
-   overriding function Next (Source : in out File_Parser_Input) return Character is
+   overriding function Next (Source : in out File_Parser_Input)
+                             return Character is
    begin
       Source.Pos := Source.Pos + 1;
       return Character'Val (Source.Buffer (Source.Pos - 1));
@@ -342,8 +457,8 @@ package body Jintp is
    end Back;
 
    overriding procedure Match (Source : in out File_Parser_Input;
-                    Pattern : String;
-                    Matches : out Boolean) is
+                               Pattern : String;
+                               Matches : out Boolean) is
    begin
       if Natural (Source.Buffer'Last - Source.Pos) + 1 < Pattern'Length then
          Matches := False;
@@ -385,7 +500,9 @@ package body Jintp is
                                Index : Stream_Element_Offset)
                                return Boolean is
       begin
-         if Natural (Index) + Length (Str) - 1 > Natural (Input.Buffer'Last) then
+         if Natural (Index) + Length (Str) - 1
+           > Natural (Input.Buffer'Last)
+         then
             return False;
          end if;
          for I in 1 .. Length (Str) loop
@@ -418,7 +535,9 @@ package body Jintp is
                   Modifier_Candidate := Character'Val
                     (Input.Buffer (I + Stream_Element_Offset (
                      Length (Settings.Statement_Start))));
-                  if Modifier_Candidate = '+' or else Modifier_Candidate = '-' then
+                  if Modifier_Candidate = '+'
+                    or else Modifier_Candidate = '-'
+                  then
                      Modifier := Modifier_Candidate;
                   end if;
                end if;
@@ -511,6 +630,7 @@ package body Jintp is
       Current_Line : Positive := 1;
       Last_Pos : Stream_Element_Offset := 1;
       Modifier : Character;
+      Macro_Name : Unbounded_String;
    begin
       Input.Pos := 1;
       Input.Buffer := new Stream_Element_Array
@@ -533,8 +653,8 @@ package body Jintp is
                      while Last_Char_Pos > 0
                        and then (Character'Val (Input.Buffer (Last_Char_Pos))
                                  = ' '
-                            or else Character'Val (Input.Buffer (Last_Char_Pos))
-                            = ASCII.VT) loop
+                                 or else Character'Val (Input.Buffer (Last_Char_Pos))
+                                 = ASCII.VT) loop
                         Last_Char_Pos := Last_Char_Pos - 1;
                      end loop;
                   end if;
@@ -548,13 +668,18 @@ package body Jintp is
                   New_Expression := new Expression'
                     (Kind => Literal,
                      Value => (Kind => String_Expression_Value,
-                               S => Buffer_Slice (Input.Pos, Last_Char_Pos)
-                              )
-                    );
+                               S => Buffer_Slice (Input.Pos, Last_Char_Pos)));
                end;
-               Target.Elements.Append ((Line => Current_Line,
-                                        Kind => Expression_Element,
-                                        Expr => New_Expression));
+               if Macro_Name = Null_Unbounded_String then
+                  Target.Elements.Append ((Line => Current_Line,
+                                           Kind => Expression_Element,
+                                           Expr => New_Expression));
+               else
+                  Target.Macros.Element (Macro_Name)
+                    .Elements.Append ((Line => Current_Line,
+                                       Kind => Expression_Element,
+                                       Expr => New_Expression));
+               end if;
             end if;
             Input.Pos := New_Pos + End_String_Length (Kind, Settings);
             if Modifier = '+' or else Modifier = '-' then
@@ -568,21 +693,46 @@ package body Jintp is
                   Current_Line := Current_Line + Line_Count (Last_Pos,
                                                              Input.Pos - 1);
                   Last_Pos := Input.Pos;
-                  Target.Elements.Append ((Line => Current_Line,
-                                           Kind => Expression_Element,
-                                           Expr => New_Expression));
+                  if Macro_Name = Null_Unbounded_String then
+                     Target.Elements.Append ((Line => Current_Line,
+                                              Kind => Expression_Element,
+                                              Expr => New_Expression));
+                  else
+                     Target.Macros.Element (Macro_Name)
+                          .Elements.Append ((Line => Current_Line,
+                                             Kind => Expression_Element,
+                                             Expr => New_Expression));
+                  end if;
                when Statement_Element =>
-                  Jintp.Statement_Parser.
-                    Parse (Input, Settings, New_Statement, Modifier);
+                  Jintp.Statement_Parser.Parse
+                    (Input, Settings, New_Statement, Modifier);
                   Current_Line := Current_Line + Line_Count (Last_Pos,
                                                              Input.Pos - 1);
                   if Settings.Trim_Blocks and then Modifier /= '+' then
                      SkipLinebreak;
                   end if;
                   Last_Pos := Input.Pos;
-                  Target.Elements.Append ((Line => Current_Line,
-                                           Kind => Statement_Element,
-                                           Stmt => New_Statement));
+                  if New_Statement.Kind = Macro_Statement then
+                     Macro_Name := New_Statement.Macro_Name;
+                     Target.Macros.Insert (
+                        New_Statement.Macro_Name,
+                        new Macro'
+                          (Parameters => New_Statement.Macro_Parameters,
+                           Elements => Template_Element_Vectors.Empty_Vector));
+                  elsif New_Statement.Kind = Endmacro_Statement then
+                     Macro_Name := Null_Unbounded_String;
+                  else
+                     if Macro_Name = Null_Unbounded_String then
+                        Target.Elements.Append ((Line => Current_Line,
+                                                 Kind => Statement_Element,
+                                                 Stmt => New_Statement));
+                     else
+                        Target.Macros.Element (Macro_Name)
+                          .Elements.Append ((Line => Current_Line,
+                                             Kind => Statement_Element,
+                                             Stmt => New_Statement));
+                     end if;
+                  end if;
                   if Modifier = '-' then
                      while Input.Pos <= Input.Buffer'Last and then
                        Jintp.Scanner.Is_Whitespace
@@ -609,9 +759,16 @@ package body Jintp is
                          Input.Buffer'Last)
                         )
               );
-            Target.Elements.Append ((Line => Current_Line,
-                                     Kind => Expression_Element,
-                                     Expr => New_Expression));
+            if Macro_Name = Null_Unbounded_String then
+               Target.Elements.Append ((Line => Current_Line,
+                                        Kind => Expression_Element,
+                                        Expr => New_Expression));
+            else
+               Target.Macros.Element (Macro_Name)
+                 .Elements.Append ((Line => Current_Line,
+                                    Kind => Expression_Element,
+                                    Expr => New_Expression));
+            end if;
             exit;
          end if;
       end loop;
@@ -726,17 +883,13 @@ package body Jintp is
    end "<";
 
    function Evaluate (Source : Expression;
-                      Resolver : Resolvers.Variable_Resolver'class)
-                      return Expression_Value;
-
-   function Evaluate (Source : Expression;
-                      Resolver : Resolvers.Variable_Resolver'class)
+                      Resolver : Resolvers.Variable_Resolver'Class)
                       return Unbounded_String;
    package Filters is
 
       function Evaluate_Filter
         (Source : Expression;
-         Resolver : Resolvers.Variable_Resolver'class)
+         Resolver : Resolvers.Variable_Resolver'Class)
       return Jintp.Expression_Value;
 
    end Filters;
@@ -816,9 +969,9 @@ package body Jintp is
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
-        := Evaluate (Source.Arguments (1).all, Resolver);
+        := Evaluate (Source.Named_Arguments (1).Argument.all, Resolver);
       Right_Arg : constant Expression_Value
-        := Evaluate (Source.Arguments (2).all, Resolver);
+        := Evaluate (Source.Named_Arguments (2).Argument.all, Resolver);
    begin
       if Left_Arg.Kind = String_Expression_Value
         and then Right_Arg.Kind = String_Expression_Value
@@ -846,10 +999,10 @@ package body Jintp is
                                Resolver : Resolvers.Variable_Resolver'class)
                                return Expression_Value
    is
-      Left_Arg : constant Expression_Value := Evaluate (Source.Arguments (1).all,
-                                     Resolver);
+      Left_Arg : constant Expression_Value := Evaluate
+        (Source.Named_Arguments (1).Argument.all, Resolver);
       Right_Arg : constant Expression_Value
-        := Evaluate (Source.Arguments (2).all, Resolver);
+        := Evaluate (Source.Named_Arguments (2).Argument.all, Resolver);
    begin
       if not Is_Numeric (Left_Arg.Kind) or else not Is_Numeric (Right_Arg.Kind)
       then
@@ -871,9 +1024,9 @@ package body Jintp is
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
-        := Evaluate (Source.Arguments (1).all, Resolver);
+        := Evaluate (Source.Named_Arguments (1).Argument.all, Resolver);
       Right_Arg : constant Expression_Value
-        := Evaluate (Source.Arguments (2).all, Resolver);
+        := Evaluate (Source.Named_Arguments (2).Argument.all, Resolver);
    begin
       if not Is_Numeric (Left_Arg.Kind) or else not Is_Numeric (Right_Arg.Kind)
       then
@@ -895,9 +1048,9 @@ package body Jintp is
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
-        := Evaluate (Source.Arguments (1).all, Resolver);
+        := Evaluate (Source.Named_Arguments (1).Argument.all, Resolver);
       Right_Arg : constant Expression_Value
-        := Evaluate (Source.Arguments (2).all, Resolver);
+        := Evaluate (Source.Named_Arguments (2).Argument.all, Resolver);
    begin
       if not Is_Numeric (Left_Arg.Kind)
         or else not Is_Numeric (Right_Arg.Kind)
@@ -914,9 +1067,9 @@ package body Jintp is
                                   return Expression_Value
    is
       Left_Arg : constant Expression_Value
-        := Evaluate (Source.Arguments (1).all, Resolver);
+        := Evaluate (Source.Named_Arguments (1).Argument.all, Resolver);
       Right_Arg : constant Expression_Value
-        := Evaluate (Source.Arguments (2).all, Resolver);
+        := Evaluate (Source.Named_Arguments (2).Argument.all, Resolver);
    begin
       if Left_Arg.Kind /= Integer_Expression_Value
         or else Right_Arg.Kind /= Integer_Expression_Value
@@ -928,14 +1081,55 @@ package body Jintp is
               I => Left_Arg.I / Right_Arg.I);
    end Evaluate_Integer_Div;
 
-   function Element (Source : Dictionary;
-                     Key : Unbounded_String)
-                     return Expression_Value is
+   procedure Execute_Statement
+     (Stmt : Statement;
+      Current : in out Template_Element_Vectors.Cursor;
+      Out_Buffer : in out Unbounded_String;
+      Resolver : Resolvers.Variable_Resolver'class);
+
+   function Render (Source : Template_Element_Vectors.Vector;
+                    Filename : String;
+                    Resolver : Resolvers.Variable_Resolver'Class)
+                    return Unbounded_String is
+      Out_Buffer : Unbounded_String;
+      Current : Template_Element_Vectors.Cursor := First (Source);
+      Element : Template_Element;
    begin
-      return Source.Assocs.Value_Assocs
-        ((Kind => String_Expression_Value,
-          S => Key));
-   end Element;
+      while Current /= Template_Element_Vectors.No_Element loop
+         Element := Template_Element_Vectors.Element (Current);
+         begin
+            case Element.Kind is
+            when Expression_Element =>
+               Append (Out_Buffer,
+                       Evaluate (Element.Expr.all, Resolver));
+            when Statement_Element =>
+               Execute_Statement (Element.Stmt, Current, Out_Buffer, Resolver);
+            end case;
+         exception
+            when E : Template_Error =>
+               raise Template_Error with "File """ & Filename
+                 & """, line" & Element.Line'Image & ": "
+                 & Ada.Exceptions.Exception_Message (E);
+         end;
+         Next (Current);
+      end loop;
+      return Out_Buffer;
+   end Render;
+
+   function Find_Named_Argument (Source : Named_Argument_Vectors.Vector;
+                                 Name : Unbounded_String)
+                                 return Named_Argument_Vectors.Cursor
+   is
+      Position : Named_Argument_Vectors.Cursor := Source.First;
+   begin
+      while Position /= Named_Argument_Vectors.No_Element loop
+         if Named_Argument_Vectors.Element (Position).Name = Name then
+            return Position;
+         end if;
+         Position := Named_Argument_Vectors.Next (Position);
+      end loop;
+      return Named_Argument_Vectors.No_Element;
+   end Find_Named_Argument;
 
    function Evaluate_Operator
      (Source : Expression;
@@ -944,10 +1138,11 @@ package body Jintp is
    is
       Left_Arg : Expression_Value;
       Right_Arg : Expression_Value;
-      Name : constant String := To_String (Source.Name);
+      Name : constant String := To_String (Source.Operator_Name);
+      Macro : Macro_Access;
    begin
       if Name = "NOT" then
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
          if Left_Arg.Kind /= Boolean_Expression_Value then
             raise Template_Error with "boolean expression expected";
@@ -956,7 +1151,7 @@ package body Jintp is
                  B => not Left_Arg.B);
       end if;
       if Name = "OR" then
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
          if Left_Arg.Kind /= Boolean_Expression_Value then
             raise Template_Error with "boolean expression expected";
@@ -965,7 +1160,7 @@ package body Jintp is
             return (Kind => Boolean_Expression_Value,
                     B => True);
          end if;
-         Right_Arg := Evaluate (Source.Arguments (2).all,
+         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
                                 Resolver);
          if Right_Arg.Kind /= Boolean_Expression_Value then
             raise Template_Error with "boolean expression expected";
@@ -974,7 +1169,7 @@ package body Jintp is
                  B => Right_Arg.B);
       end if;
       if Name = "AND" then
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
          if Left_Arg.Kind /= Boolean_Expression_Value then
             raise Template_Error with "boolean expression expected";
@@ -983,7 +1178,7 @@ package body Jintp is
             return (Kind => Boolean_Expression_Value,
                     B => False);
          end if;
-         Right_Arg := Evaluate (Source.Arguments (2).all,
+         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
                                 Resolver);
          if Right_Arg.Kind /= Boolean_Expression_Value then
             raise Template_Error with "boolean expression expected";
@@ -992,41 +1187,41 @@ package body Jintp is
                  B => Right_Arg.B);
       end if;
       if Name = "==" then
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
-         Right_Arg := Evaluate (Source.Arguments (2).all,
+         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
                                 Resolver);
          return (Kind => Boolean_Expression_Value,
                  B => Left_Arg = Right_Arg);
       end if;
       if Name = "<" then
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
-         Right_Arg := Evaluate (Source.Arguments (2).all,
+         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
                                 Resolver);
          return (Kind => Boolean_Expression_Value,
                  B => Left_Arg < Right_Arg);
       end if;
       if Name = "<=" then
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
-         Right_Arg := Evaluate (Source.Arguments (2).all,
+         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
                                 Resolver);
          return (Kind => Boolean_Expression_Value,
                  B => not (Right_Arg < Left_Arg));
       end if;
       if Name = ">" then
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
-         Right_Arg := Evaluate (Source.Arguments (2).all,
+         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
                                 Resolver);
          return (Kind => Boolean_Expression_Value,
                  B => Right_Arg < Left_Arg);
       end if;
       if Name = ">=" then
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
-         Right_Arg := Evaluate (Source.Arguments (2).all,
+         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
                                 Resolver);
          return (Kind => Boolean_Expression_Value,
                  B => not (Left_Arg < Right_Arg));
@@ -1034,10 +1229,10 @@ package body Jintp is
       if Name = "~" then
          declare
             Left_String : constant Unbounded_String
-              := Evaluate (Source.Arguments (1).all,
+              := Evaluate (Source.Named_Arguments (1).Argument.all,
                            Resolver);
             Right_String : constant Unbounded_String
-              := Evaluate (Source.Arguments (2).all,
+              := Evaluate (Source.Named_Arguments (2).Argument.all,
                            Resolver);
          begin
             return (Kind => String_Expression_Value,
@@ -1060,35 +1255,35 @@ package body Jintp is
          return Evaluate_Integer_Div (Source, Resolver);
       end if;
       if Name = "." then
-         if Source.Arguments (1).Kind = Variable
-           and then Source.Arguments (1).Variable_Name = "loop"
-           and then Source.Arguments (1).Kind = Variable
+         if Source.Named_Arguments (1).Argument.Kind = Variable
+           and then Source.Named_Arguments (1).Argument.Variable_Name = "loop"
+           and then Source.Named_Arguments (1).Argument.Kind = Variable
          then
             return Resolver.Resolve
-              ("loop." & Source.Arguments (2).Variable_Name);
+              ("loop." & Source.Named_Arguments (2).Argument.Variable_Name);
          end if;
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
          if Left_Arg.Kind /= Dictionary_Expression_Value then
             raise Template_Error with "dictionary expected before '.'";
          end if;
-         if Source.Arguments (2).Kind /= Variable then
+         if Source.Named_Arguments (2).Argument.Kind /= Variable then
             raise Template_Error with "identifier expected after '.'";
          end if;
          begin
             return Element (Left_Arg.Dictionary_Value,
-                            Source.Arguments (2).Variable_Name);
+                            Source.Named_Arguments (2).Argument.Variable_Name);
          exception
             when Constraint_Error =>
                raise Template_Error with "dictionary has no attribute '"
-                 & To_String (Source.Arguments (2).Variable_Name)
+                 & To_String (Source.Named_Arguments (2).Argument.Variable_Name)
                  & ''';
          end;
       end if;
       if Name = "[]" then
-         Left_Arg := Evaluate (Source.Arguments (1).all,
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
-         Right_Arg := Evaluate (Source.Arguments (2).all,
+         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
                                 Resolver);
          if Left_Arg.Kind = Dictionary_Expression_Value then
             if Right_Arg.Kind /= String_Expression_Value then
@@ -1120,8 +1315,51 @@ package body Jintp is
       if Name = "items" then
          raise Template_Error with "unsupported usage of 'items'";
       end if;
-      raise Template_Error with "internal error: unknown operator " &
-        To_String (Source.Name);
+
+      Macro := Resolver.Get_Macro (Source.Operator_Name);
+      if Macro /= null then
+         declare
+            Macro_Resolver : Dictionary_Resolver;
+            Position : Named_Argument_Vectors.Cursor;
+         begin
+            for I in 1 .. Macro.Parameters.Length loop
+               if I <= Source.Named_Arguments.Length
+                 and then Source.Named_Arguments (Positive (I)).Name
+                   = Null_Unbounded_String
+               then
+                  -- Positional parameter
+                  Macro_Resolver.Values.Insert
+                    (Macro.Parameters (Positive (I)).Name,
+                     Evaluate
+                       (Source.Named_Arguments (Positive (I)).Argument.all,
+                        Resolver));
+               else
+                  Position := Find_Named_Argument
+                    (Source.Named_Arguments,
+                     Macro.Parameters (Positive (I)).Name);
+                  if Position /= Named_Argument_Vectors.No_Element then
+                     -- Named parameter
+                     Macro_Resolver.Values.Insert
+                       (Macro.Parameters (Positive (I)).Name,
+                        Evaluate
+                          (Named_Argument_Vectors.Element (Position).Argument.all,
+                           Resolver));
+                  elsif Macro.Parameters (Positive (I)).Has_Default_Value then
+                     -- Default parameter value
+                     Init (Macro_Resolver.Values);
+                     Include (Macro_Resolver.Values.Assocs.Value_Assocs,
+                              (Kind => String_Expression_Value,
+                               S => Macro.Parameters (Positive (I)).Name),
+                              Macro.Parameters (Positive (I)).Default_Value);
+                  end if;
+               end if;
+            end loop;
+            return (Kind => String_Expression_Value,
+                   S => Render (Macro.Elements, "", Macro_Resolver));
+         end;
+      end if;
+
+      raise Template_Error with "unknown operator " & To_String (Source.Name);
    end Evaluate_Operator;
 
    function Evaluate_Test
@@ -1263,8 +1501,8 @@ package body Jintp is
             when Variable =>
                return Null_Unbounded_String;
             when Operator =>
-               if To_String (Source.Name) = "[]"
-                 or else To_String (Source.Name) = "."
+               if To_String (Source.Operator_Name) = "[]"
+                 or else To_String (Source.Operator_Name) = "."
                then
                   return Null_Unbounded_String;
                end if;
@@ -1273,12 +1511,6 @@ package body Jintp is
          end case;
          raise;
    end Evaluate;
-
-   procedure Execute_Statement
-     (Stmt : Statement;
-      Current : in out Template_Element_Vectors.Cursor;
-      Out_Buffer : in out Unbounded_String;
-      Resolver : Resolvers.Variable_Resolver'class);
 
    procedure Process_Block_Elements
      (Current : in out Template_Element_Vectors.Cursor;
@@ -1349,7 +1581,8 @@ package body Jintp is
       Out_Buffer : in out Unbounded_String;
       Resolver : Resolvers.Variable_Resolver'class)
    is
-      Condition_Value : constant Expression_Value := Evaluate (Condition, Resolver);
+      Condition_Value : constant Expression_Value := Evaluate
+        (Condition, Resolver);
       Element : Template_Element;
    begin
       if Condition_Value.Kind /= Boolean_Expression_Value then
@@ -1383,6 +1616,10 @@ package body Jintp is
       Index : Natural;
       Length : Ada.Containers.Count_Type;
    end record;
+
+   overriding function Get_Macro (Resolver : Chained_Resolver;
+                                  Name : Unbounded_String)
+                                  return Macro_Access;
 
    overriding function Resolve (Resolver : Chained_Resolver;
                      Name : Unbounded_String)
@@ -1421,6 +1658,13 @@ package body Jintp is
       end if;
       return Resolvers.Resolve (Resolver.Parent_Resolver.all, Name);
    end Resolve;
+
+   overriding function Get_Macro (Resolver : Chained_Resolver;
+                                  Name : Unbounded_String)
+                                  return Macro_Access is
+   begin
+      return Resolvers.Get_Macro (Resolver.Parent_Resolver.all, Name);
+   end Get_Macro;
 
    package Value_Sorting is new
      Expression_Value_Vectors.Generic_Sorting ("<" => "<");
@@ -1505,7 +1749,7 @@ package body Jintp is
 
       procedure Execute_For_Items is
          Collection_Value : constant Expression_Value
-           := Evaluate (Collection.Arguments (1).all,
+           := Evaluate (Collection.Named_Arguments (1).Argument.all,
                         Resolver);
       begin
          if Collection_Value.Kind /= Dictionary_Expression_Value then
@@ -1730,7 +1974,7 @@ package body Jintp is
       Loop_Resolver.Parent_Resolver := Resolver'Unchecked_Access;
       Loop_Resolver.Settings := Resolver.Settings;
       if Collection.Kind = Operator
-        and then Collection.Name = "items"
+        and then Collection.Operator_Name = "items"
       then
          Execute_For_Items;
       elsif Collection.Kind = Filter
@@ -1796,20 +2040,6 @@ package body Jintp is
       end case;
    end Execute_Statement;
 
-   type Dictionary_Resolver is new Resolvers.Variable_Resolver with record
-      Values : Dictionary;
-   end record;
-
-   overriding function Resolve (Resolver : Dictionary_Resolver;
-                     Name : Unbounded_String)
-                     return Expression_Value is
-   begin
-      return Element (Resolver.Values, Name);
-   exception
-      when Constraint_Error =>
-         raise Template_Error with "'" & To_String (Name) & "' is undefined";
-   end Resolve;
-
    procedure Configure (Settings : in out Environment;
                         Expression_Start : String := Default_Expression_Start;
                         Expression_End : String := Default_Expression_End;
@@ -1849,36 +2079,17 @@ package body Jintp is
       return Left.Elements.Values = Right.Elements.Values;
    end "=";
 
-   function Render (Source : Template;
+   function Render (Source : Template'Class;
                     Values : Dictionary;
                     Settings : Environment'Class)
-                     return Unbounded_String is
-      Out_Buffer : Unbounded_String;
-      Current : Template_Element_Vectors.Cursor := First (Source.Elements);
-      Element : Template_Element;
+                    return Unbounded_String is
       Resolver : constant Dictionary_Resolver :=
         (Settings => Settings'Unchecked_Access,
-         Values => Values);
+         Values => Values,
+         Template_Ref => Source'Unchecked_Access);
    begin
-      while Current /= Template_Element_Vectors.No_Element loop
-         Element := Template_Element_Vectors.Element (Current);
-         begin
-            case Element.Kind is
-            when Expression_Element =>
-               Append (Out_Buffer,
-                       Evaluate (Element.Expr.all, Resolver));
-            when Statement_Element =>
-               Execute_Statement (Element.Stmt, Current, Out_Buffer, Resolver);
-            end case;
-         exception
-            when E : Template_Error =>
-               raise Template_Error with "File """ & To_String (Source.Filename)
-                 & """, line" & Element.Line'Image & ": "
-                 & Ada.Exceptions.Exception_Message (E);
-         end;
-         Next (Current);
-      end loop;
-      return Out_Buffer;
+      return Render (Source.Elements, To_String (Source.Filename),
+                     Resolver);
    end Render;
 
    function Render (Filename : String;

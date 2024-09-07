@@ -91,7 +91,8 @@ package body Filters is
          end if;
       end loop;
       if Fill and not Spread then
-         for I in 1 .. Slice_Length * Row_Count - Natural (Length (Source)) loop
+         for I in 1 .. Slice_Length * Row_Count - Natural (Length (Source))
+         loop
             Init (Sublist);
             Append (Sublist.Elements.Values, Fill_With);
          end loop;
