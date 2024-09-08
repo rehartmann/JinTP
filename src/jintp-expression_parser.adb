@@ -316,12 +316,61 @@ package body Expression_Parser is
          raise;
    end Parse_Primitive;
 
-   function Parse_Mul_Div (Scanner : in out Scanner_State;
+   function Parse_Power (Scanner : in out Scanner_State;
                    Input : in out Jintp.Input.Character_Iterator'Class;
                    Settings : Environment)
                    return Jintp.Expression_Access is
       Right_Expression : Expression_Access;
       Result : Expression_Access := Parse_Primitive (Scanner, Input, Settings);
+      Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
+   begin
+      while Current_Token.Kind = Power_Token loop
+         Next_Token (Scanner, Input, Current_Token, Settings);
+         Right_Expression := Parse_Primitive (Scanner, Input, Settings);
+         Result := new Expression'
+           (Kind => Operator,
+            Operator_Name => To_Unbounded_String ("**"),
+            Named_Arguments => To_Vector (Result, Right_Expression)
+           );
+         Current_Token := Jintp.Scanner.Current_Token (Scanner);
+      end loop;
+      return Result;
+   exception
+      when others =>
+         Delete_Expression (Result);
+         raise;
+   end Parse_Power;
+
+   function Parse_Unary (Scanner : in out Scanner_State;
+                   Input : in out Jintp.Input.Character_Iterator'Class;
+                   Settings : Environment)
+                   return Jintp.Expression_Access is
+      Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
+      Operator_Name : Unbounded_String;
+   begin
+      case Current_Token.Kind is
+         when Plus_Token =>
+            Operator_Name := To_Unbounded_String ("+");
+         when Minus_Token =>
+            Operator_Name := To_Unbounded_String ("-");
+         when others =>
+            return Parse_Power (Scanner, Input, Settings);
+      end case;
+      Next_Token (Scanner, Input, Current_Token, Settings);
+      return new Expression'
+        (Kind => Operator,
+         Operator_Name => Operator_Name,
+         Named_Arguments => To_Vector
+           (Parse_Power (Scanner, Input, Settings))
+        );
+   end Parse_Unary;
+
+   function Parse_Mul_Div (Scanner : in out Scanner_State;
+                   Input : in out Jintp.Input.Character_Iterator'Class;
+                   Settings : Environment)
+                   return Jintp.Expression_Access is
+      Right_Expression : Expression_Access;
+      Result : Expression_Access := Parse_Unary (Scanner, Input, Settings);
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
       Operator_Name : Unbounded_String;
    begin
@@ -334,7 +383,7 @@ package body Expression_Parser is
             when others => null;
          end case;
          Next_Token (Scanner, Input, Current_Token, Settings);
-         Right_Expression := Parse_Primitive (Scanner, Input, Settings);
+         Right_Expression := Parse_Unary (Scanner, Input, Settings);
          Result := new Expression'
            (Kind => Operator,
             Operator_Name => Operator_Name,

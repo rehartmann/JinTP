@@ -7,6 +7,7 @@ with Ada.Unchecked_Deallocation;
 with Ada.Characters.Handling;
 with Ada.Exceptions;
 with Ada.Text_IO;
+with Ada.Numerics.Generic_Elementary_Functions;
 
 with Jintp.Input;
 with Jintp.Scanner;
@@ -970,9 +971,12 @@ package body Jintp is
    is
       Left_Arg : constant Expression_Value
         := Evaluate (Source.Named_Arguments (1).Argument.all, Resolver);
-      Right_Arg : constant Expression_Value
-        := Evaluate (Source.Named_Arguments (2).Argument.all, Resolver);
+      Right_Arg : Expression_Value;
    begin
+      if Length (Source.Named_Arguments) = 1 then
+         return Left_Arg;
+      end if;
+      Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all, Resolver);
       if Left_Arg.Kind = String_Expression_Value
         and then Right_Arg.Kind = String_Expression_Value
       then
@@ -1001,13 +1005,27 @@ package body Jintp is
    is
       Left_Arg : constant Expression_Value := Evaluate
         (Source.Named_Arguments (1).Argument.all, Resolver);
-      Right_Arg : constant Expression_Value
-        := Evaluate (Source.Named_Arguments (2).Argument.all, Resolver);
+      Right_Arg : Expression_Value;
+
    begin
-      if not Is_Numeric (Left_Arg.Kind) or else not Is_Numeric (Right_Arg.Kind)
-      then
+      if not Is_Numeric (Left_Arg.Kind) then
          raise Template_Error with
-           "arguments of - operator must both be numeric";
+           "arguments of - operator must be numeric";
+      end if;
+      if Length (Source.Named_Arguments) = 1 then
+         if Left_Arg.Kind = Integer_Expression_Value
+         then
+            return (Kind => Integer_Expression_Value,
+                    I => -Left_Arg.I);
+         end if;
+         return (Kind => Float_Expression_Value,
+                 F => -Left_Arg.F);
+      end if;
+      Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                Resolver);
+      if not Is_Numeric (Right_Arg.Kind) then
+         raise Template_Error with
+           "arguments of - operator must be numeric";
       end if;
       if Left_Arg.Kind = Integer_Expression_Value
         and then Right_Arg.Kind = Integer_Expression_Value
@@ -1080,6 +1098,29 @@ package body Jintp is
       return (Kind => Integer_Expression_Value,
               I => Left_Arg.I / Right_Arg.I);
    end Evaluate_Integer_Div;
+
+   package Long_Float_Elementary_Functions is new
+     Ada.Numerics.Generic_Elementary_Functions (Float_Type => Long_Float);
+
+   use Long_Float_Elementary_Functions;
+
+   function Evaluate_Power (Source : Expression;
+                            Resolver : Resolvers.Variable_Resolver'Class)
+                            return Expression_Value
+   is
+      Left_Arg : constant Expression_Value
+        := Evaluate (Source.Named_Arguments (1).Argument.all, Resolver);
+      Right_Arg : constant Expression_Value
+        := Evaluate (Source.Named_Arguments (2).Argument.all, Resolver);
+   begin
+      if not Is_Numeric (Left_Arg.Kind) or else not Is_Numeric (Right_Arg.Kind)
+      then
+         raise Template_Error with
+           "arguments of * operator must both be numeric";
+      end if;
+      return (Kind => Float_Expression_Value,
+              F => To_Float (Left_Arg) ** To_Float (Right_Arg));
+   end Evaluate_Power;
 
    procedure Execute_Statement
      (Stmt : Statement;
@@ -1254,6 +1295,9 @@ package body Jintp is
       if Name = "//" then
          return Evaluate_Integer_Div (Source, Resolver);
       end if;
+      if Name = "**" then
+         return Evaluate_Power (Source, Resolver);
+      end if;
       if Name = "." then
          if Source.Named_Arguments (1).Argument.Kind = Variable
            and then Source.Named_Arguments (1).Argument.Variable_Name = "loop"
@@ -1359,7 +1403,7 @@ package body Jintp is
          end;
       end if;
 
-      raise Template_Error with "unknown operator " & To_String (Source.Name);
+      raise Template_Error with "unknown operator " & To_String (Source.Operator_Name);
    end Evaluate_Operator;
 
    function Evaluate_Test
