@@ -175,7 +175,8 @@ package body Expression_Parser is
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
       Arguments : out Named_Argument_Vectors.Vector;
-      Settings : Environment);
+      Settings : Environment;
+      Named_Arguments_All_Or_None : Boolean := True);
 
    function Parse_Primitive
      (Scanner : in out Scanner_State;
@@ -193,7 +194,8 @@ package body Expression_Parser is
             Name := Current_Token.Identifier;
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind = Left_Paren_Token then
-               Parse_Named_Arguments (Scanner, Input, Arguments, Settings);
+               Parse_Named_Arguments (Scanner, Input, Arguments, Settings,
+                                      False);
                Result := new Expression'(Kind => Operator,
                                          Operator_Name => Name,
                                          Named_Arguments => Arguments);
@@ -543,12 +545,31 @@ package body Expression_Parser is
    end Parse_Or;
 
    procedure Check_Naming_Consistency
-     (Arguments : Named_Argument_Vectors.Vector) is
+     (Arguments : Named_Argument_Vectors.Vector;
+      All_Or_None : Boolean)
+   is
       Arg_Count : constant Natural := Natural (Length (Arguments));
    begin
       if Arg_Count < 2 then
          return;
       end if;
+
+      -- Check if a name appears twice
+      for I in 1 .. Arg_Count - 1 loop
+         if Arguments (I).Name /= Null_Unbounded_String then
+            for J in I + 1 .. Arg_Count loop
+               if Arguments (J).Name = Arguments (I).Name then
+                  raise Template_Error with "argument name repeated";
+               end if;
+            end loop;
+         end if;
+      end loop;
+
+      if not All_Or_None then
+         return;
+      end if;
+
+      -- Check if all or none parameters are named;
       for I in 2 .. Arg_Count loop
          if (Arguments (1).Name = Null_Unbounded_String)
            /= (Arguments (I).Name = Null_Unbounded_String)
@@ -563,7 +584,8 @@ package body Expression_Parser is
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
       Arguments : out Named_Argument_Vectors.Vector;
-      Settings : Environment)
+      Settings : Environment;
+      Named_Arguments_All_Or_None : Boolean := True)
    is
       Argument : Named_Argument;
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
@@ -606,7 +628,7 @@ package body Expression_Parser is
          end if;
          Next_Token (Scanner, Input, Current_Token, Settings);
       end loop;
-      Check_Naming_Consistency (Arguments);
+      Check_Naming_Consistency (Arguments, Named_Arguments_All_Or_None);
       Next_Token (Scanner, Input, Current_Token, Settings);
    exception
       when others =>

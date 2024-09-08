@@ -151,7 +151,7 @@ package body Filters is
          Value_Argument : constant Expression_Access := Source.Arguments (1);
          Slices_Argument : constant Expression_Access := Source.Arguments (2);
          Fill_With_Argument : constant Expression_Access
-           := Source.Arguments (2);
+           := Source.Arguments (3);
          Source_Value, Slices_Value : Expression_Value;
          Slice_Length : Natural;
       begin
