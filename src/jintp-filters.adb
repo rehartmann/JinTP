@@ -274,8 +274,31 @@ package body Filters is
             return (Kind => String_Expression_Value,
                     S => Ada.Characters.Handling.To_Upper
                       (Element (Source_String, 1))
-                    & To_Unbounded_String (Slice (Source_String,
-                      2, Length (Source_String))));
+                    & To_Unbounded_String (
+                      Ada.Characters.Handling.To_Lower (Slice (Source_String,
+                        2, Length (Source_String)))));
+         end;
+      end if;
+      if Source.Name = "upper" then
+         declare
+            Source_String : constant Unbounded_String
+              := Evaluate (Source.Arguments (1).all,
+                           Resolver);
+         begin
+            return (Kind => String_Expression_Value,
+                    S => To_Unbounded_String (Ada.Characters.Handling.To_Upper
+                      (To_String (Source_String))));
+         end;
+      end if;
+      if Source.Name = "lower" then
+         declare
+            Source_String : constant Unbounded_String
+              := Evaluate (Source.Arguments (1).all,
+                           Resolver);
+         begin
+            return (Kind => String_Expression_Value,
+                    S => To_Unbounded_String (Ada.Characters.Handling.To_Lower
+                      (To_String (Source_String))));
          end;
       end if;
       Source_Value := Evaluate (Source.Arguments (1).all,
