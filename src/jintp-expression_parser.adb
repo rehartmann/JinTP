@@ -554,7 +554,7 @@ package body Expression_Parser is
          return;
       end if;
 
-      -- Check if a name appears twice
+      --  Check if a name appears twice
       for I in 1 .. Arg_Count - 1 loop
          if Arguments (I).Name /= Null_Unbounded_String then
             for J in I + 1 .. Arg_Count loop
@@ -569,7 +569,7 @@ package body Expression_Parser is
          return;
       end if;
 
-      -- Check if all or none parameters are named;
+      --  Check if all or none parameters are named;
       for I in 2 .. Arg_Count loop
          if (Arguments (1).Name = Null_Unbounded_String)
            /= (Arguments (I).Name = Null_Unbounded_String)
