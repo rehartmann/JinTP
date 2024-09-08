@@ -1327,7 +1327,7 @@ package body Jintp is
                  and then Source.Named_Arguments (Positive (I)).Name
                    = Null_Unbounded_String
                then
-                  -- Positional parameter
+                  --  Positional parameter
                   Macro_Resolver.Values.Insert
                     (Macro.Parameters (Positive (I)).Name,
                      Evaluate
@@ -1338,14 +1338,14 @@ package body Jintp is
                     (Source.Named_Arguments,
                      Macro.Parameters (Positive (I)).Name);
                   if Position /= Named_Argument_Vectors.No_Element then
-                     -- Named parameter
+                     --  Named parameter
                      Macro_Resolver.Values.Insert
                        (Macro.Parameters (Positive (I)).Name,
                         Evaluate
                           (Named_Argument_Vectors.Element (Position).Argument.all,
                            Resolver));
                   elsif Macro.Parameters (Positive (I)).Has_Default_Value then
-                     -- Default parameter value
+                     --  Default parameter value
                      Init (Macro_Resolver.Values);
                      Include (Macro_Resolver.Values.Assocs.Value_Assocs,
                               (Kind => String_Expression_Value,
