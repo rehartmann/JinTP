@@ -99,6 +99,8 @@ package body Jintp is
       end case;
    end record;
 
+   type Parameters is array (Positive range <>) of Parameter;
+
    package Parameter_Vectors is new
      Ada.Containers.Vectors (Index_Type => Positive,
                              Element_Type => Parameter);
@@ -248,6 +250,21 @@ package body Jintp is
         ((Kind => String_Expression_Value,
           S => Key));
    end Element;
+
+   function Find_Named_Argument (Source : Named_Argument_Vectors.Vector;
+                                 Name : Unbounded_String)
+                                 return Named_Argument_Vectors.Cursor
+   is
+      Position : Named_Argument_Vectors.Cursor := Source.First;
+   begin
+      while Position /= Named_Argument_Vectors.No_Element loop
+         if Named_Argument_Vectors.Element (Position).Name = Name then
+            return Position;
+         end if;
+         Position := Named_Argument_Vectors.Next (Position);
+      end loop;
+      return Named_Argument_Vectors.No_Element;
+   end Find_Named_Argument;
 
    package Expression_Parser is
 
@@ -1156,21 +1173,6 @@ package body Jintp is
       end loop;
       return Out_Buffer;
    end Render;
-
-   function Find_Named_Argument (Source : Named_Argument_Vectors.Vector;
-                                 Name : Unbounded_String)
-                                 return Named_Argument_Vectors.Cursor
-   is
-      Position : Named_Argument_Vectors.Cursor := Source.First;
-   begin
-      while Position /= Named_Argument_Vectors.No_Element loop
-         if Named_Argument_Vectors.Element (Position).Name = Name then
-            return Position;
-         end if;
-         Position := Named_Argument_Vectors.Next (Position);
-      end loop;
-      return Named_Argument_Vectors.No_Element;
-   end Find_Named_Argument;
 
    function Evaluate_Operator
      (Source : Expression;

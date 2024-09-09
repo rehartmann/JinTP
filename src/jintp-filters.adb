@@ -1,4 +1,5 @@
 with Ada.Characters.Handling;
+with Ada.Strings.Unbounded.Less_Case_Insensitive;
 with Ada.Strings.Maps;
 
 separate (Jintp)
@@ -106,6 +107,74 @@ package body Filters is
               List_Value => Result);
    end Slice;
 
+   function Max (Source : List;
+                 Case_Sensitive_Argument : Expression;
+                 Resolver : Resolvers.Variable_Resolver'class)
+                 return Expression_Value is
+      Len : constant Ada.Containers.Count_Type
+        := Length (Source.Elements.Values);
+      Case_Sensitive : Expression_Value;
+      Result : Expression_Value;
+   begin
+      if Len = 0 then
+         return Result;
+      end if;
+      Case_Sensitive := Evaluate (Case_Sensitive_Argument, Resolver);
+      Result := Source.Elements.Values.First_Element;
+      if Result.Kind = String_Expression_Value
+        and then not Case_Sensitive.B
+      then
+         for I in 1 .. Natural (Len) - 1 loop
+            if Ada.Strings.Unbounded.Less_Case_Insensitive
+              (Result.S, Source.Elements.Values.Element (I).S)
+            then
+               Result := Source.Elements.Values (I);
+            end if;
+         end loop;
+      else
+         for I in 1 .. Natural (Len) - 1 loop
+            if Result < Source.Elements.Values.Element (I) then
+               Result := Source.Elements.Values (I);
+            end if;
+         end loop;
+      end if;
+      return Result;
+   end Max;
+
+   function Min (Source : List;
+                 Case_Sensitive_Argument : Expression;
+                 Resolver : Resolvers.Variable_Resolver'class)
+                 return Expression_Value is
+      Len : constant Ada.Containers.Count_Type
+        := Length (Source.Elements.Values);
+      Case_Sensitive : Expression_Value;
+      Result : Expression_Value;
+   begin
+      if Len = 0 then
+         return Result;
+      end if;
+      Case_Sensitive := Evaluate (Case_Sensitive_Argument, Resolver);
+      Result := Source.Elements.Values.First_Element;
+      if Result.Kind = String_Expression_Value
+        and then not Case_Sensitive.B
+      then
+         for I in 1 .. Natural (Len) - 1 loop
+            if Ada.Strings.Unbounded.Less_Case_Insensitive
+              (Source.Elements.Values.Element (I).S, Result.S)
+            then
+               Result := Source.Elements.Values (I);
+            end if;
+         end loop;
+      else
+         for I in 1 .. Natural (Len) - 1 loop
+            if Source.Elements.Values.Element (I) < Result then
+               Result := Source.Elements.Values (I);
+            end if;
+         end loop;
+      end if;
+      return Result;
+   end Min;
+
    function Evaluate_Filter (Source : Expression;
                              Resolver : Resolvers.Variable_Resolver'class)
                              return Expression_Value is
@@ -201,15 +270,10 @@ package body Filters is
       begin
          Value := Evaluate (Source.Arguments (1).all,
                             Resolver);
-         if Source.Arguments (2) = null then
-            Width_Value := (Kind => Integer_Expression_Value,
-                            I => 80);
-         else
-            Width_Value := Evaluate (Source.Arguments (2).all,
-                                    Resolver);
-            if Width_Value.Kind /= Integer_Expression_Value then
-               raise Template_Error with "argument must be integer";
-            end if;
+         Width_Value := Evaluate (Source.Arguments (2).all,
+                                  Resolver);
+         if Width_Value.Kind /= Integer_Expression_Value then
+            raise Template_Error with "argument must be integer";
          end if;
          if Length (Value) >= Width_Value.I then
             return (Kind => String_Expression_Value,
@@ -229,11 +293,9 @@ package body Filters is
       is
          Buffer : Unbounded_String := Null_Unbounded_String;
          First_Element : Boolean := True;
-         Separator : Unbounded_String := Null_Unbounded_String;
+         Separator : constant Unbounded_String
+           := Evaluate (Source.Arguments (2).all, Resolver);
       begin
-         if Source.Arguments (2) /= null then
-            Separator := Evaluate (Source.Arguments (2).all, Resolver);
-         end if;
          case Source_Value.Kind is
             when List_Expression_Value =>
                for V of Source_Value.List_Value.Elements.Values loop
@@ -319,6 +381,16 @@ package body Filters is
       if Source.Name = "last" then
          return Source_Value.List_Value.Elements.Values.Last_Element;
       end if;
+      if Source.Name = "max" then
+         return Max (Source_Value.List_Value,
+                     Source.Arguments (2).all,
+                     Resolver);
+      end if;
+      if Source.Name = "min" then
+         return Min (Source_Value.List_Value,
+                     Source.Arguments (2).all,
+                     Resolver);
+      end if;
       if Source.Name = "count" then
          return Count (Source_Value);
       end if;
@@ -328,19 +400,18 @@ package body Filters is
          end if;
          declare
             Trim_Characters : Ada.Strings.Maps.Character_Set;
-            Source_Value_2 : Expression_Value;
+            Source_Value_2 : constant Expression_Value
+              := Evaluate (Source.Arguments (2).all,
+                           Resolver);
          begin
-            if Source.Arguments (2) /= null then
-               Source_Value_2 := Evaluate (Source.Arguments (2).all,
-                                           Resolver);
-               if Source_Value_2.Kind /= String_Expression_Value then
-                  raise Template_Error
-                    with "argument to 'trim' must be a string";
-               end if;
+            if Source_Value_2.Kind /= String_Expression_Value then
+               raise Template_Error with "argument to 'trim' must be a string";
+            end if;
+            if Source_Value_2.S = Null_Unbounded_String then
+               Trim_Characters := Default_Trim_Characters;
+            else
                Trim_Characters := Ada.Strings.Maps.To_Set (To_String
                                                            (Source_Value_2.S));
-            else
-               Trim_Characters := Default_Trim_Characters;
             end if;
             return (Kind => String_Expression_Value,
                     S => Ada.Strings.Unbounded.Trim (Source_Value.S,

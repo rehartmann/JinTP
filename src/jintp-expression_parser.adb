@@ -131,17 +131,6 @@ package body Expression_Parser is
          raise;
    end Parse_Dictionary;
 
-   function To_Array (Left : Expression_Access;
-                      Right : Expression_Access := null)
-                      return Expression_Access_Array
-   is
-      Result : Expression_Access_Array (1 .. Argument_Capacity);
-   begin
-      Result (1) := Left;
-      Result (2) := Right;
-      return Result;
-   end To_Array;
-
    function To_Array (Arguments : Named_Argument_Vectors.Vector)
                       return Expression_Access_Array
    is
@@ -617,16 +606,6 @@ package body Expression_Parser is
       if not All_Or_None then
          return;
       end if;
-
-      --  Check if all or none parameters are named;
-      for I in 2 .. Arg_Count loop
-         if (Arguments (1).Name = Null_Unbounded_String)
-           /= (Arguments (I).Name = Null_Unbounded_String)
-         then
-            raise Template_Error
-              with "either all or none of the arguments must be named";
-         end if;
-      end loop;
    end Check_Naming_Consistency;
 
    procedure Parse_Named_Arguments
@@ -687,38 +666,36 @@ package body Expression_Parser is
          raise;
    end Parse_Named_Arguments;
 
-   type Name_Array is array (Positive range <>) of Unbounded_String;
-
-   function Find_Argument (Source : Name_Array;
-                           Name : Unbounded_String)
-                           return Natural
-   is
-   begin
-      for I in Source'First .. Source'Last loop
-         if Source (I) = Name then
-            return I;
-         end if;
-      end loop;
-      return 0;
-   end Find_Argument;
-
-   procedure Extract_Named_Arguments
+   procedure Extract_Arguments
      (Source : in out Named_Argument_Vectors.Vector;
       Target : in out Expression_Access_Array;
-      Names : Name_Array)
+      Signature : Parameters)
    is
-      Index : Natural;
+      Position : Named_Argument_Vectors.Cursor;
    begin
-      for I in 1 .. Natural (Length (Source)) loop
-         Index := Find_Argument (Names, Source (I).Name);
-         if Index = 0 then
-            raise Template_Error with "unexpected argument '"
-              & To_String (Source (I).Name) & "'";
+      for I in 1 .. Signature'Last - Signature'First + 1 loop
+         if I <= Natural (Source.Length)
+            and then Source (I).Name = Null_Unbounded_String
+         then
+            --  Positional parameter
+            Target (Target'First + I - 1) := Source (I).Argument;
+            Source (I).Argument := null;
+         else
+            Position := Find_Named_Argument
+              (Source, Signature (Signature'First + I - 1).Name);
+            if Position /= Named_Argument_Vectors.No_Element then
+               --  Named parameter
+               Target (Target'First + I - 1) := Source (Position).Argument;
+               Source (Position).Argument := null;
+            elsif Signature (Signature'First + I - 1).Has_Default_Value then
+               --  Default parameter value
+               Target (Target'First + I - 1) := new Expression'
+                 (Kind => Literal,
+                  Value => Signature (Signature'First + I - 1).Default_Value);
+            end if;
          end if;
-         Target (Target'First + Index - 1) := Source (I).Argument;
-         Source (I).Argument := null;
       end loop;
-   end Extract_Named_Arguments;
+   end Extract_Arguments;
 
    function To_Array
      (Filter_Name : String;
@@ -730,32 +707,77 @@ package body Expression_Parser is
    begin
       Result (1) := First_Argument;
       if Filter_Name = "dictsort" then
-         Extract_Named_Arguments (Remaining_Arguments,
-                                  Result (2 .. Result'Last),
-                                  (To_Unbounded_String ("case_sensitive"),
-                                   To_Unbounded_String ("by"),
-                                   To_Unbounded_String ("reverse")));
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            ((Name => To_Unbounded_String ("case_sensitive"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Boolean_Expression_Value,
+                                B => False)),
+             (Name => To_Unbounded_String ("by"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => String_Expression_Value,
+                                S => To_Unbounded_String ("key"))),
+             (Name => To_Unbounded_String ("reverse"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Boolean_Expression_Value,
+                                B => False))));
       elsif Filter_Name = "batch" then
-         Extract_Named_Arguments (Remaining_Arguments,
-                                  Result (2 .. Result'Last),
-                                  (To_Unbounded_String ("linecount"),
-                                   To_Unbounded_String ("fill_with")));
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            ((Name => To_Unbounded_String ("linecount"),
+              Has_Default_Value => False),
+             (Name => To_Unbounded_String ("fill_with"),
+              Has_Default_Value => False)));
       elsif Filter_Name = "slice" then
-         Extract_Named_Arguments (Remaining_Arguments,
-                                  Result (2 .. Result'Last),
-                                  (To_Unbounded_String ("slices"),
-                                   To_Unbounded_String ("fill_with")));
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            ((Name => To_Unbounded_String ("slices"),
+              Has_Default_Value => False),
+             (Name => To_Unbounded_String ("fill_with"),
+              Has_Default_Value => False)));
       elsif Filter_Name = "center" then
-         Extract_Named_Arguments (Remaining_Arguments,
-                                  Result (2 .. Result'Last),
-                                  (1 => To_Unbounded_String ("width")));
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            (1 => (Name => To_Unbounded_String ("width"),
+                   Has_Default_Value => True,
+                   Default_Value => (Kind => Integer_Expression_Value,
+                                     I => 80))));
       elsif Filter_Name = "join" then
-         Extract_Named_Arguments (Remaining_Arguments,
-                                  Result (2 .. Result'Last),
-                                  (1 => To_Unbounded_String ("d")));
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            (1 => (Name => To_Unbounded_String ("d"),
+                   Has_Default_Value => True,
+                   Default_Value => (Kind => String_Expression_Value,
+                                     S => Null_Unbounded_String))));
+      elsif Filter_Name = "trim" then
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            (1 => (Name => To_Unbounded_String ("chars"),
+                   Has_Default_Value => True,
+                   Default_Value => (Kind => String_Expression_Value,
+                                     S => Null_Unbounded_String))));
+      elsif Filter_Name = "max" or else Filter_Name = "min" then
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            (1 => (Name => To_Unbounded_String ("case_sensitive"),
+                   Has_Default_Value => True,
+                   Default_Value => (Kind => Boolean_Expression_Value,
+                                     B => False))));
       else
-         raise Template_Error with Filter_Name &
-           " does not support named parameters";
+         if Natural (Remaining_Arguments.Length) > Argument_Capacity + 1 then
+            raise Template_Error with "too many arguments to " & Filter_Name;
+         end if;
+         for I in 1 .. Natural (Remaining_Arguments.Length) loop
+            Result (1 + I) := Remaining_Arguments (I).Argument;
+            Remaining_Arguments (I).Argument := null;
+         end loop;
       end if;
       return Result;
    end To_Array;
@@ -777,27 +799,12 @@ package body Expression_Parser is
          Filter_Name := Current_Token.Identifier;
          Next_Token (Scanner, Input, Current_Token, Settings);
          Parse_Named_Arguments (Scanner, Input, Named_Arguments, Settings);
-         if Length (Named_Arguments) = 0 or else
-           (Length (Named_Arguments) > 0
-            and then Named_Arguments (1).Name = Null_Unbounded_String)
-         then
-            Result := new Expression'(Kind => Filter,
-                                      Name => Filter_Name,
-                                      Arguments => To_Array (To_Vector (
-                                        (Null_Unbounded_String,
-                                        Result),
-                                        1)
-                                        & Named_Arguments)
-                                     );
-         else
-            Result := new Expression'(Kind => Filter,
-                                      Name => Filter_Name,
-                                      Arguments =>
-                                        To_Array (To_String (Filter_Name),
-                                          Result,
-                                          Named_Arguments)
-                                     );
-         end if;
+         Result := new Expression'(Kind => Filter,
+                                   Name => Filter_Name,
+                                   Arguments =>
+                                     To_Array (To_String (Filter_Name),
+                                       Result,
+                                       Named_Arguments));
       end loop;
       return Result;
    exception
