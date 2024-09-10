@@ -770,6 +770,18 @@ package body Expression_Parser is
                    Has_Default_Value => True,
                    Default_Value => (Kind => Boolean_Expression_Value,
                                      B => False))));
+      elsif Filter_Name = "round" then
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            ((Name => To_Unbounded_String ("precision"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Integer_Expression_Value,
+                                I => 0)),
+             (Name => To_Unbounded_String ("method"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => String_Expression_Value,
+                                S => To_Unbounded_String ("common")))));
       else
          if Natural (Remaining_Arguments.Length) > Argument_Capacity + 1 then
             raise Template_Error with "too many arguments to " & Filter_Name;

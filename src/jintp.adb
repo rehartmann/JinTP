@@ -903,6 +903,16 @@ package body Jintp is
    function Evaluate (Source : Expression;
                       Resolver : Resolvers.Variable_Resolver'Class)
                       return Unbounded_String;
+
+   function To_Float (V : Expression_Value) return Long_Float is
+   begin
+      case V.Kind is
+         when Integer_Expression_Value => return Long_Float (V.I);
+         when Float_Expression_Value => return V.F;
+         when others => raise Template_Error  with "numeric value expected";
+      end case;
+   end To_Float;
+
    package Filters is
 
       function Evaluate_Filter
@@ -972,15 +982,6 @@ package body Jintp is
       return Kind = Integer_Expression_Value
         or else Kind = Float_Expression_Value;
    end Is_Numeric;
-
-   function To_Float (V : Expression_Value) return Long_Float is
-   begin
-      case V.Kind is
-         when Integer_Expression_Value => return Long_Float (V.I);
-         when Float_Expression_Value => return V.F;
-         when others => raise Template_Error  with "numeric value expected";
-      end case;
-   end To_Float;
 
    function Evaluate_Add (Source : Expression;
                           Resolver : Resolvers.Variable_Resolver'Class)
