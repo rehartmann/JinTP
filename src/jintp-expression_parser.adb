@@ -782,6 +782,26 @@ package body Expression_Parser is
               Has_Default_Value => True,
               Default_Value => (Kind => String_Expression_Value,
                                 S => To_Unbounded_String ("common")))));
+      elsif Filter_Name = "int" then
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            ((Name => To_Unbounded_String ("default"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Integer_Expression_Value,
+                                I => 0)),
+             (Name => To_Unbounded_String ("base"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Integer_Expression_Value,
+                                I => 10))));
+      elsif Filter_Name = "float" then
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            (1 => (Name => To_Unbounded_String ("default"),
+                   Has_Default_Value => True,
+                   Default_Value => (Kind => Float_Expression_Value,
+                                     F => 0.0))));
       else
          if Natural (Remaining_Arguments.Length) > Argument_Capacity + 1 then
             raise Template_Error with "too many arguments to " & Filter_Name;

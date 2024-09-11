@@ -399,6 +399,77 @@ package body Filters is
          end if;
       end Evaluate_Round;
 
+      function Evaluate_Int return Expression_Value
+      is
+         Default_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (2).all, Resolver);
+         Base_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (3).all, Resolver);
+      begin
+         case Source_Value.Kind is
+            when Integer_Expression_Value =>
+               return Source_Value;
+            when Float_Expression_Value =>
+               return (Kind => Integer_Expression_Value,
+                       I => Integer (Long_Float'Truncation (Source_Value.F)));
+            when String_Expression_Value =>
+               if Base_Value.I = 10 then
+                  return (Kind => Integer_Expression_Value,
+                          I => Integer'Value (To_String (Source_Value.S)));
+               else
+                  if Length (Source_Value.S) > 2
+                    and then
+                      ((Base_Value.I = 16
+                        and then
+                          (Slice (Source_Value.S, 1, 2) = "0x"
+                           or else Slice (Source_Value.S, 1, 2) = "0X"))
+                       or else
+                         (Base_Value.I = 8
+                          and then (Slice (Source_Value.S, 1, 2) = "0o"
+                                    or else Slice (Source_Value.S, 1, 2) = "0O"))
+                       or else
+                         (Base_Value.I = 2
+                          and then (Slice (Source_Value.S, 1, 2) = "0b"
+                                    or else Slice (Source_Value.S, 1, 2) = "0B")))
+                  then
+                     Source_Value.S := To_Unbounded_String
+                       (Slice (Source_Value.S, 3, Length (Source_Value.S)));
+                  end if;
+                  return (Kind => Integer_Expression_Value,
+                          I => Integer'Value (Base_Value.I'Image
+                            & '#' & To_String (Source_Value.S) & '#'));
+               end if;
+            when others =>
+               return Default_Value;
+         end case;
+      exception
+         when Constraint_Error =>
+            return Default_Value;
+      end Evaluate_Int;
+
+      function Evaluate_Float return Expression_Value
+      is
+         Default_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (2).all, Resolver);
+      begin
+         case Source_Value.Kind is
+            when Integer_Expression_Value =>
+               return (Kind => Float_Expression_Value,
+                       F => Long_Float (Source_Value.I));
+            when Float_Expression_Value =>
+               return Source_Value;
+            when String_Expression_Value =>
+               return (Kind => Float_Expression_Value,
+                       F => Long_Float'Value
+                         (To_String (Source_Value.S)));
+            when others =>
+               return Default_Value;
+         end case;
+      exception
+         when Constraint_Error =>
+            return Default_Value;
+      end Evaluate_Float;
+
    begin
       if Source.Name = "slice" then
          return Evaluate_Slice;
@@ -505,6 +576,12 @@ package body Filters is
       end if;
       if Source.Name = "round" then
          return Evaluate_Round;
+      end if;
+      if Source.Name = "int" then
+         return Evaluate_Int;
+      end if;
+      if Source.Name = "float" then
+         return Evaluate_Float;
       end if;
       if Source.Name = "dictsort" then
          raise Template_Error with "unsupported usage of 'dictsort'";
