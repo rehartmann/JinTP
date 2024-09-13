@@ -470,6 +470,80 @@ package body Filters is
             return Default_Value;
       end Evaluate_Float;
 
+      function Evaluate_Indent return Expression_Value
+      is
+         Width_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (2).all, Resolver);
+         First_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (3).all, Resolver);
+         Blank_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (3).all, Resolver);
+         Result : Unbounded_String;
+         Indentation : Unbounded_String;
+         Pos : Positive;
+         New_Pos : Natural;
+      begin
+         if Source_Value.Kind /= String_Expression_Value then
+            raise Template_Error
+              with "first argument to 'indent' must be a string";
+         end if;
+         if First_Value.Kind /= Boolean_Expression_Value
+           or else Blank_Value.Kind /= Boolean_Expression_Value
+         then
+            raise Template_Error
+              with "invalid argument to 'indent'";
+         end if;
+         case Width_Value.Kind is
+            when String_Expression_Value =>
+               Indentation := Width_Value.S;
+            when Integer_Expression_Value =>
+               Indentation := Width_Value.I * ' ';
+            when others =>
+               raise Template_Error
+                 with "invalid width argument to 'indent'";
+         end case;
+
+         if First_Value.B then
+            Result := Indentation;
+         end if;
+         Pos := 1;
+         New_Pos := Index (Source_Value.S, (1 => ASCII.LF), Pos);
+         if New_Pos = 0 then
+            Append (Result, Slice (Source_Value.S,
+                                   Pos,
+                                   Length (Source_Value.S)));
+            return (Kind => String_Expression_Value,
+                    S => Result);
+         else
+            Append (Result, Slice (Source_Value.S,
+                                   Pos,
+                                   New_Pos));
+         end if;
+         Pos := New_Pos + 1;
+         loop
+            if Pos > Length (Source_Value.S) then
+               exit;
+            end if;
+            New_Pos := Index (Source_Value.S, (1 => ASCII.LF), Pos);
+            Append (Result, Indentation);
+            if New_Pos = 0 then
+               Append (Result,
+                       Slice (Source_Value.S,
+                         Pos,
+                         Length (Source_Value.S)));
+               exit;
+            else
+               Append (Result,
+                       Slice (Source_Value.S,
+                         Pos,
+                         New_Pos));
+               Pos := New_Pos + 1;
+            end if;
+         end loop;
+         return (Kind => String_Expression_Value,
+                 S => Result);
+      end Evaluate_Indent;
+
    begin
       if Source.Name = "slice" then
          return Evaluate_Slice;
@@ -533,9 +607,19 @@ package body Filters is
          end;
       end if;
       if Source.Name = "first" then
+         if Source_Value.List_Value.Elements = null
+           or else Is_Empty (Source_Value.List_Value.Elements.Values)
+         then
+            return Empty_String_Value;
+         end if;
          return Source_Value.List_Value.Elements.Values.First_Element;
       end if;
       if Source.Name = "last" then
+         if Source_Value.List_Value.Elements = null
+           or else Is_Empty (Source_Value.List_Value.Elements.Values)
+         then
+            return Empty_String_Value;
+         end if;
          return Source_Value.List_Value.Elements.Values.Last_Element;
       end if;
       if Source.Name = "max" then
@@ -582,6 +666,9 @@ package body Filters is
       end if;
       if Source.Name = "float" then
          return Evaluate_Float;
+      end if;
+      if Source.Name = "indent" then
+         return Evaluate_Indent;
       end if;
       if Source.Name = "dictsort" then
          raise Template_Error with "unsupported usage of 'dictsort'";

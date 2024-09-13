@@ -80,6 +80,10 @@ package body Jintp is
       Value_Assocs : Association_Maps.Map;
    end record;
 
+   Empty_String_Value : constant Expression_Value
+     := (Kind => String_Expression_Value,
+         S => Null_Unbounded_String);
+
    type Expression;
 
    type Expression_Access is access Expression;
@@ -627,9 +631,14 @@ package body Jintp is
          Result : Natural := 0;
          Last : Stream_Element_Offset := To;
       begin
-         if Character'Val (Input.Buffer (Last)) = ASCII.LF then
-            Last := Last - 1;
-         end if;
+         begin
+            if Character'Val (Input.Buffer (Last)) = ASCII.LF then
+               Last := Last - 1;
+            end if;
+         exception
+            when Constraint_Error =>
+               Last := Input.Buffer'Last;
+         end;
          for I in From .. Last loop
             if Character'Val (Input.Buffer (I)) = ASCII.LF then
                Result := Result + 1;
@@ -1495,9 +1504,7 @@ package body Jintp is
                 );
       end if;
       if Source.Name = "divisibleby" then
-         if Source.Arguments (1) = null
-           or else Source.Arguments (2) = null
-         then
+         if Source.Arguments (2) = null then
             raise Template_Error
               with "invalid number of arguments to 'divisibleby'";
          end if;
@@ -1513,6 +1520,25 @@ package body Jintp is
             end if;
             return (Kind => Boolean_Expression_Value,
                     B => Source_Value.I mod Source_Value_2.I = 0);
+         end;
+      end if;
+      if Source.Name = "in" then
+         if Source.Arguments (2) = null then
+            raise Template_Error
+              with "invalid number of arguments to 'in'";
+         end if;
+         declare
+            Source_Value_2 : constant Expression_Value
+              := Evaluate (Source.Arguments (2).all,
+                           Resolver);
+         begin
+            if Source_Value_2.Kind /= List_Expression_Value
+            then
+               raise Template_Error with "'in' is only supported for lists";
+            end if;
+            return (Kind => Boolean_Expression_Value,
+                    B => Contains (Source_Value_2.List_Value.Elements.Values,
+                     Source_Value));
          end;
       end if;
       raise Template_Error with "no test named '"

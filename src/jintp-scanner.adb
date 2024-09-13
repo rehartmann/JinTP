@@ -281,6 +281,40 @@ package body Jintp.Scanner is
             begin
                C := Next (Input);
                while C /= Delimiter loop
+                  if C = '\' then
+                     C := Next (Input);
+                     case C is
+                        when ASCII.CR =>
+                           C := Next (Input);
+                           if C = ASCII.LF then
+                              C := Next (Input);
+                           end if;
+                        when ASCII.LF =>
+                           C := Next (Input);
+                        when '\' =>
+                           C := '\';
+                        when ''' =>
+                           C := ''';
+                        when '"' =>
+                           C := '\';
+                        when 'a' =>
+                           C := ASCII.BEL;
+                        when 'b' =>
+                           C := ASCII.BS;
+                        when 'f' =>
+                           C := ASCII.FF;
+                        when 'n' =>
+                           C := ASCII.LF;
+                        when 'r' =>
+                           C := ASCII.CR;
+                        when 't' =>
+                           C := ASCII.HT;
+                        when 'v' =>
+                           C := ASCII.VT;
+                        when others =>
+                           Append (Str_Buf, '\');
+                     end case;
+                  end if;
                   Append (Str_Buf, C);
                   C := Next (Input);
                end loop;
@@ -293,6 +327,9 @@ package body Jintp.Scanner is
             null;
       end case;
       raise Template_Error with "unexpected char '" & C & ''';
+   exception
+      when Constraint_Error =>
+         raise Template_Error with "unexpected end of input";
    end Next_Token;
 
    function Current_Token (State : Scanner_State) return Token is

@@ -465,16 +465,19 @@ package body Expression_Parser is
             Arguments : Named_Argument_Vectors.Vector;
          begin
             Next_Token (Scanner, Input, Current_Token, Settings);
-            if Current_Token.Kind /= Identifier_Token then
+            if Current_Token.Kind = Identifier_Token then
+               Name := Current_Token.Identifier;
+            elsif Current_Token.Kind = In_Token then
+               Name := To_Unbounded_String ("in");
+            else
                raise Template_Error with "expected test name, got "
                  & Current_Token.Kind'Image;
             end if;
-            Name := Current_Token.Identifier;
             Next_Token (Scanner, Input, Current_Token, Settings);
             case Current_Token.Kind is
                when Left_Paren_Token =>
                   Parse_Named_Arguments (Scanner, Input, Arguments, Settings);
-               when Identifier_Token .. Float_Literal_Token =>
+               when Identifier_Token .. Float_Literal_Token | Left_Bracket_Token =>
                   Arguments.Append ((Name => Null_Unbounded_String,
                                      Argument => Parse (Scanner,
                                        Input,
@@ -802,6 +805,22 @@ package body Expression_Parser is
                    Has_Default_Value => True,
                    Default_Value => (Kind => Float_Expression_Value,
                                      F => 0.0))));
+      elsif Filter_Name = "indent" then
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            ((Name => To_Unbounded_String ("width"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Integer_Expression_Value,
+                                I => 4)),
+             (Name => To_Unbounded_String ("first"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Boolean_Expression_Value,
+                                B => False)),
+             (Name => To_Unbounded_String ("base"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Boolean_Expression_Value,
+                                B => False))));
       else
          if Natural (Remaining_Arguments.Length) > Argument_Capacity + 1 then
             raise Template_Error with "too many arguments to " & Filter_Name;
