@@ -850,6 +850,7 @@ package body Expression_Parser is
          Filter_Name := Current_Token.Identifier;
          Next_Token (Scanner, Input, Current_Token, Settings);
          Parse_Named_Arguments (Scanner, Input, Named_Arguments, Settings);
+         Current_Token := Jintp.Scanner.Current_Token (Scanner);
          Result := new Expression'(Kind => Filter,
                                    Name => Filter_Name,
                                    Arguments =>
@@ -879,7 +880,8 @@ package body Expression_Parser is
       Result := Parse (Scanner, Input, Settings);
       Current_Token := Jintp.Scanner.Current_Token (Scanner);
       if Current_Token.Kind /= Expression_End_Token then
-         raise Template_Error with "end of expression expected";
+         raise Template_Error with "end of expression expected, got "
+           & Current_Token.Kind'Image;
       end if;
       return Result;
    exception
