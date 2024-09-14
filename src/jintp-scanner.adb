@@ -1,4 +1,5 @@
 with Ada.Characters.Handling;
+with Ada.Strings.Equal_Case_Insensitive;
 
 package body Jintp.Scanner is
 
@@ -9,17 +10,12 @@ package body Jintp.Scanner is
 
       subtype Symbolic_Token_Kind is Token_Kind range In_Token .. Not_Token;
 
-      False_Unbounded_String : constant Unbounded_String :=
-        To_Unbounded_String ("false");
-      True_Unbounded_String : constant Unbounded_String :=
-        To_Unbounded_String ("true");
-
    begin
-      if Source = False_Unbounded_String then
+      if Ada.Strings.Equal_Case_Insensitive (To_String (Source), "false") then
          Result := (Kind => Boolean_Literal_Token,
                     Boolean_Value => False);
          return;
-      elsif Source = True_Unbounded_String then
+      elsif Ada.Strings.Equal_Case_Insensitive (To_String (Source), "true") then
          Result := (Kind => Boolean_Literal_Token,
                     Boolean_Value => True);
          return;
