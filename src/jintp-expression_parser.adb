@@ -817,7 +817,7 @@ package body Expression_Parser is
               Has_Default_Value => True,
               Default_Value => (Kind => Boolean_Expression_Value,
                                 B => False)),
-             (Name => To_Unbounded_String ("base"),
+             (Name => To_Unbounded_String ("blank"),
               Has_Default_Value => True,
               Default_Value => (Kind => Boolean_Expression_Value,
                                 B => False))));

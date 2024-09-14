@@ -107,6 +107,13 @@ package body Filters is
               List_Value => Result);
    end Slice;
 
+   function Is_Empty_Line (S : String) return Boolean is
+   begin
+      return (S'Length = 2 and then S (S'First) = ASCII.CR
+              and then S (S'First + 1) = ASCII.LF)
+        or else (S'Length = 1 and then S (S'First) = ASCII.LF);
+   end Is_Empty_Line;
+
    function Evaluate_Filter (Source : Expression;
                              Resolver : Resolvers.Variable_Resolver'class)
                              return Expression_Value is
@@ -216,7 +223,8 @@ package body Filters is
            + (if 2 * Left_Padding + Length (Value) < Width_Value.I
               then 1 else 0);
          return  (Kind => String_Expression_Value,
-                  S => Left_Padding * ' ' & Value & Right_Padding * ' ');
+                  S => (Left_Padding * ' ') & Value
+                       & (Right_Padding * ' '));
       end Evaluate_Center;
 
       function Evaluate_Max (Source_List : List)
@@ -477,7 +485,7 @@ package body Filters is
          First_Value : constant Expression_Value
            := Evaluate (Source.Arguments (3).all, Resolver);
          Blank_Value : constant Expression_Value
-           := Evaluate (Source.Arguments (3).all, Resolver);
+           := Evaluate (Source.Arguments (4).all, Resolver);
          Result : Unbounded_String;
          Indentation : Unbounded_String;
          Pos : Positive;
@@ -525,20 +533,23 @@ package body Filters is
                exit;
             end if;
             New_Pos := Index (Source_Value.S, (1 => ASCII.LF), Pos);
-            Append (Result, Indentation);
-            if New_Pos = 0 then
-               Append (Result,
-                       Slice (Source_Value.S,
-                         Pos,
-                         Length (Source_Value.S)));
-               exit;
-            else
-               Append (Result,
-                       Slice (Source_Value.S,
-                         Pos,
-                         New_Pos));
-               Pos := New_Pos + 1;
-            end if;
+            declare
+               Line : constant String := Slice
+                 (Source_Value.S,
+                  Pos,
+                  (if New_Pos = 0 then Length (Source_Value.S) else New_Pos));
+            begin
+               if Blank_Value.B or else not Is_Empty_Line (Line) then
+                  Append (Result, Indentation);
+               end if;
+               Append (Result, Line);
+               if New_Pos = 0 then
+                  --  This was the last line, so we're done
+                  exit;
+               else
+                  Pos := New_Pos + 1;
+               end if;
+            end;
          end loop;
          return (Kind => String_Expression_Value,
                  S => Result);
