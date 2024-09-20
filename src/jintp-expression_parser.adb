@@ -821,6 +821,18 @@ package body Expression_Parser is
               Has_Default_Value => True,
               Default_Value => (Kind => Boolean_Expression_Value,
                                 B => False))));
+      elsif Filter_Name = "replace" then
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            ((Name => To_Unbounded_String ("old"),
+              Has_Default_Value => False),
+             (Name => To_Unbounded_String ("new"),
+              Has_Default_Value => False),
+             (Name => To_Unbounded_String ("count"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Integer_Expression_Value,
+                                I => -1))));
       else
          if Natural (Remaining_Arguments.Length) > Argument_Capacity + 1 then
             raise Template_Error with "too many arguments to " & Filter_Name;

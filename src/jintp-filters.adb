@@ -10,20 +10,6 @@ package body Filters is
        (Ada.Strings.Maps.Character_Sequence'
           (' ', ASCII.LF, ASCII.HT, ASCII.VT, ASCII.FF, ASCII.CR));
 
-   function UTF_8_Length (Source : Unbounded_String) return Natural is
-      Result : Natural := 0;
-      C : Character;
-   begin
-      for I in 1 .. Length (Source) loop
-         C := Element (Source, I);
-         if Ada.Characters.Handling.Is_ISO_646 (C)
-           or else Character'Pos (C) >= 192 then
-            Result := Result + 1;
-         end if;
-      end loop;
-      return Result;
-   end UTF_8_Length;
-
    function Html_Escape (Source : Unbounded_String) return Unbounded_String
      with Post =>
        Index (Html_Escape'Result, Ada.Strings.Maps.To_Set ("<>'""")) = 0
@@ -42,6 +28,21 @@ package body Filters is
       end loop;
       return Result;
    end Html_Escape;
+
+   function UTF_8_Length (Source : Unbounded_String) return Natural is
+      Result : Natural := 0;
+      C : Character;
+   begin
+      for I in 1 .. Length (Source) loop
+         C := Element (Source, I);
+         if Ada.Characters.Handling.Is_ISO_646 (C)
+           or else Character'Pos (C) >= 192
+         then
+            Result := Result + 1;
+         end if;
+      end loop;
+      return Result;
+   end UTF_8_Length;
 
    function Count (Source_Value : Expression_Value)
                    return Expression_Value is
@@ -569,6 +570,52 @@ package body Filters is
                  S => Result);
       end Evaluate_Indent;
 
+      function Evaluate_Replace return Expression_Value
+      is
+         Old_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (2).all, Resolver);
+         New_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (3).all, Resolver);
+         Count_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (4).all, Resolver);
+         Result : Unbounded_String;
+         I : Natural := 0;
+         Pos : Positive := 1;
+         New_Pos : Natural;
+      begin
+         if Source_Value.Kind /= String_Expression_Value then
+            raise Template_Error
+              with "first argument to 'replace' must be a string";
+         end if;
+         if Old_Value.Kind /= String_Expression_Value
+           or else New_Value.Kind  /= String_Expression_Value
+           or else Count_Value.Kind /= Integer_Expression_Value
+         then
+            raise Template_Error
+              with "invalid width argument to 'replace'";
+         end if;
+         loop
+            if Count_Value.I > 0 and then I >= Count_Value.I then
+               exit;
+            end if;
+            I := I + 1;
+            New_Pos := Index (Source_Value.S, To_String (Old_Value.S), Pos);
+            if New_Pos = 0 then
+               exit;
+            end if;
+            if New_Pos > Pos then
+               Append (Result, Slice (Source_Value.S, Pos, New_Pos - 1));
+            end if;
+            Append (Result, New_Value.S);
+            Pos := New_Pos + Length (Old_Value.S);
+         end loop;
+         Append (Result, Slice (Source_Value.S,
+                                Pos,
+                                Length (Source_Value.S)));
+         return (Kind => String_Expression_Value,
+                 S => Result);
+      end Evaluate_Replace;
+
    begin
       if Source.Name = "slice" then
          return Evaluate_Slice;
@@ -694,6 +741,9 @@ package body Filters is
       end if;
       if Source.Name = "indent" then
          return Evaluate_Indent;
+      end if;
+      if Source.Name = "replace" then
+         return Evaluate_Replace;
       end if;
       if Source.Name = "dictsort" then
          raise Template_Error with "unsupported usage of 'dictsort'";
