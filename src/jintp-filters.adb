@@ -10,6 +10,20 @@ package body Filters is
        (Ada.Strings.Maps.Character_Sequence'
           (' ', ASCII.LF, ASCII.HT, ASCII.VT, ASCII.FF, ASCII.CR));
 
+   function UTF_8_Length (Source : Unbounded_String) return Natural is
+      Result : Natural := 0;
+      C : Character;
+   begin
+      for I in 1 .. Length (Source) loop
+         C := Element (Source, I);
+         if Ada.Characters.Handling.Is_ISO_646 (C)
+           or else Character'Pos (C) >= 192 then
+            Result := Result + 1;
+         end if;
+      end loop;
+      return Result;
+   end UTF_8_Length;
+
    function Html_Escape (Source : Unbounded_String) return Unbounded_String
      with Post =>
        Index (Html_Escape'Result, Ada.Strings.Maps.To_Set ("<>'""")) = 0
@@ -35,7 +49,7 @@ package body Filters is
    begin
       case Source_Value.Kind is
          when String_Expression_Value =>
-            Result := Integer (Length (Source_Value.S));
+            Result := UTF_8_Length (Source_Value.S);
          when Dictionary_Expression_Value =>
             Result := Integer (Source_Value.Dictionary_Value.Assocs
                                .Value_Assocs.Length);
@@ -639,7 +653,7 @@ package body Filters is
       if Source.Name = "min" then
          return Evaluate_Min (Source_Value.List_Value);
       end if;
-      if Source.Name = "count" then
+      if Source.Name = "count" or else Source.Name = "length" then
          return Count (Source_Value);
       end if;
       if Source.Name = "trim" then
