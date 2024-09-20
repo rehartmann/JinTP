@@ -595,7 +595,7 @@ package body Filters is
               with "invalid width argument to 'replace'";
          end if;
          loop
-            if Count_Value.I > 0 and then I >= Count_Value.I then
+            if Count_Value.I >= 0 and then I >= Count_Value.I then
                exit;
             end if;
             I := I + 1;
