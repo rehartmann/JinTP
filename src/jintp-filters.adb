@@ -579,7 +579,7 @@ package body Filters is
          Count_Value : constant Expression_Value
            := Evaluate (Source.Arguments (4).all, Resolver);
          Result : Unbounded_String;
-         I : Natural := 0;
+         Replaced_Count : Natural := 0;
          Pos : Positive := 1;
          New_Pos : Natural;
       begin
@@ -592,13 +592,10 @@ package body Filters is
            or else Count_Value.Kind /= Integer_Expression_Value
          then
             raise Template_Error
-              with "invalid width argument to 'replace'";
+              with "invalid argument to 'replace'";
          end if;
-         loop
-            if Count_Value.I >= 0 and then I >= Count_Value.I then
-               exit;
-            end if;
-            I := I + 1;
+         while Count_Value.I < 0 or else Replaced_Count < Count_Value.I loop
+            Replaced_Count := Replaced_Count + 1;
             New_Pos := Index (Source_Value.S, To_String (Old_Value.S), Pos);
             if New_Pos = 0 then
                exit;
