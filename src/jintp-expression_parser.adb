@@ -833,6 +833,26 @@ package body Expression_Parser is
               Has_Default_Value => True,
               Default_Value => (Kind => Integer_Expression_Value,
                                 I => -1))));
+      elsif Filter_Name = "truncate" then
+         Extract_Arguments
+           (Remaining_Arguments,
+            Result (2 .. Result'Last),
+            ((Name => To_Unbounded_String ("length"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Integer_Expression_Value,
+                                I => 255)),
+             (Name => To_Unbounded_String ("killwords"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Boolean_Expression_Value,
+                                B => False)),
+             (Name => To_Unbounded_String ("end"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => String_Expression_Value,
+                                S => To_Unbounded_String ("..."))),
+             (Name => To_Unbounded_String ("leeway"),
+              Has_Default_Value => True,
+              Default_Value => (Kind => Integer_Expression_Value,
+                                I => 5))));
       else
          if Natural (Remaining_Arguments.Length) > Argument_Capacity + 1 then
             raise Template_Error with "too many arguments to " & Filter_Name;

@@ -1,9 +1,14 @@
 with Ada.Characters.Handling;
+with Ada.Wide_Wide_Characters.Handling;
+with Ada.Strings.UTF_Encoding;
+with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
 with Ada.Strings.Unbounded.Less_Case_Insensitive;
 with Ada.Strings.Maps;
 
 separate (Jintp)
 package body Filters is
+
+   use Ada.Strings.UTF_Encoding;
 
    Default_Trim_Characters : constant Ada.Strings.Maps.Character_Set
      := Ada.Strings.Maps.To_Set
@@ -613,6 +618,65 @@ package body Filters is
                  S => Result);
       end Evaluate_Replace;
 
+      function Evaluate_Truncate return Expression_Value
+      is
+         Length_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (2).all, Resolver);
+         Killwords_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (3).all, Resolver);
+         End_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (4).all, Resolver);
+         Leeway_Value : constant Expression_Value
+           := Evaluate (Source.Arguments (5).all, Resolver);
+         Len : Natural;
+      begin
+         if Length_Value.Kind /= Integer_Expression_Value
+           or else Killwords_Value.Kind  /= Boolean_Expression_Value
+           or else End_Value.Kind /= String_Expression_Value
+           or else Leeway_Value.Kind /= Integer_Expression_Value
+         then
+            raise Template_Error
+              with "invalid argument to 'truncate'";
+         end if;
+
+         declare
+            Text : constant Wide_Wide_String := Wide_Wide_Strings.Decode
+              (UTF_8_String (To_String (Source_Value.S)));
+         begin
+            if Text'Length <= Length_Value.I + Leeway_Value.I then
+               return Source_Value;
+            end if;
+            Len := Integer'Max (Length_Value.I - Length (End_Value.S), 0);
+            if not Killwords_Value.B
+              and then Len + 1 <= Text'Length
+              and then Ada.Wide_Wide_Characters.Handling
+                .Is_Alphanumeric (Text (Text'First + Len))
+            then
+               while Len > 0
+                 and then Ada.Wide_Wide_Characters.Handling
+                   .Is_Alphanumeric (Text (Text'First + Len - 1))
+               loop
+                  Len := Len - 1;
+               end loop;
+               while Len > 0
+                 and then Ada.Wide_Wide_Characters.Handling
+                   .Is_Space (Text (Text'First + Len - 1))
+               loop
+                  Len := Len - 1;
+               end loop;
+            end if;
+
+            declare
+               Truncated : constant UTF_8_String := Wide_Wide_Strings.Encode
+                 (Text (Text'First .. Text'First + Len - 1));
+            begin
+               return (Kind => String_Expression_Value,
+                       S => To_Unbounded_String (String (Truncated))
+                       & End_Value.S);
+            end;
+         end;
+      end Evaluate_Truncate;
+
    begin
       if Source.Name = "slice" then
          return Evaluate_Slice;
@@ -741,6 +805,9 @@ package body Filters is
       end if;
       if Source.Name = "replace" then
          return Evaluate_Replace;
+      end if;
+      if Source.Name = "truncate" then
+         return Evaluate_Truncate;
       end if;
       if Source.Name = "dictsort" then
          raise Template_Error with "unsupported usage of 'dictsort'";
