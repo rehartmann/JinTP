@@ -91,7 +91,7 @@ package body Jintp is
    type Statement_Kind is (If_Statement, Elif_Statement, Else_Statement,
                            Endif_Statement, For_Statement, Endfor_Statement,
                            Include_Statement, Macro_Statement,
-                           Endmacro_Statement);
+                           Endmacro_Statement, Raw_Statement, Endraw_Statement);
 
    type Parameter (Has_Default_Value : Boolean := False) is record
       Name : Unbounded_String;
@@ -356,6 +356,10 @@ package body Jintp is
                        Result : out Statement;
                        End_Modifier : out Character);
 
+      function Parse_Endraw  (Input : in out Character_Iterator'Class;
+                              Settings : Environment)
+                              return Boolean;
+
    end Statement_Parser;
 
    package body Statement_Parser is separate;
@@ -414,20 +418,25 @@ package body Jintp is
       Self.Cached_Templates.Cleanup;
    end Finalize;
 
+   procedure Cleanup (Target : in out Statement) is
+   begin
+      case Target.Kind is
+         when If_Statement | Elif_Statement =>
+            Delete_Expression (Target.If_Condition);
+         when For_Statement =>
+            Delete_Expression (Target.For_Expression);
+         when others =>
+            null;
+      end case;
+   end Cleanup;
+
    procedure Cleanup (Element : in out Template_Element) is
    begin
       case Element.Kind is
          when Expression_Element =>
             Delete_Expression (Element.Expr);
          when Statement_Element =>
-            case Element.Stmt.Kind is
-               when If_Statement | Elif_Statement =>
-                  Delete_Expression (Element.Stmt.If_Condition);
-               when For_Statement =>
-                  Delete_Expression (Element.Stmt.For_Expression);
-               when others =>
-                  null;
-            end case;
+            Cleanup (Element.Stmt);
       end case;
    end Cleanup;
 
@@ -499,19 +508,19 @@ package body Jintp is
       Source.Pos := Source.Pos + Stream_Element_Offset (Pattern'Length);
    end Match;
 
-   function End_String_Length (Kind : Tag_Kind;
+   function Start_String_Length (Kind : Tag_Kind;
                                Settings : Environment)
                                return Stream_Element_Offset is
    begin
       case Kind is
          when Expression_Element =>
-            return Stream_Element_Offset (Length (Settings.Expression_End));
+            return Stream_Element_Offset (Length (Settings.Expression_Start));
          when Statement_Element =>
-            return Stream_Element_Offset (Length (Settings.Statement_End));
+            return Stream_Element_Offset (Length (Settings.Statement_Start));
          when Comment_Element =>
-            return Stream_Element_Offset (Length (Settings.Comment_End));
+            return Stream_Element_Offset (Length (Settings.Comment_Start));
       end case;
-   end End_String_Length;
+   end Start_String_Length;
 
    procedure Get_Template (Filename : String;
                            Target : out Template;
@@ -647,6 +656,35 @@ package body Jintp is
          return Result;
       end Line_Count;
 
+      function Get_Raw (Modifier : Character) return Expression_Access is
+         Kind : Tag_Kind;
+         Initial_Pos : Stream_Element_Offset := Input.Pos;
+         Text_End_Pos : Stream_Element_Offset;
+         New_Pos : Stream_Element_Offset;
+         Closing_Modifier : Character;
+      begin
+         loop
+            Find_Start (Kind, New_Pos, Closing_Modifier);
+            if New_Pos > Input.Buffer'Last then
+               raise Template_Error with "missing end of raw statement";
+            end if;
+            Text_End_Pos := New_Pos - 1;
+            Input.Pos := New_Pos + Start_String_Length (Kind, Settings);
+            if Modifier = '-' then
+               while Jintp.Scanner.Is_Whitespace
+                 (Character'Val (Input.Buffer (Initial_Pos))) loop
+                  Initial_Pos := Initial_Pos + 1;
+               end loop;
+            end if;
+            if Jintp.Statement_Parser.Parse_Endraw (Input, Settings) then
+               return new Expression'
+                 (Kind => Literal,
+                  Value => (Kind => String_Expression_Value,
+                            S => Buffer_Slice (Initial_Pos, Text_End_Pos)));
+            end if;
+         end loop;
+      end Get_Raw;
+
       File : File_Type;
       Kind : Tag_Kind;
       New_Expression : Expression_Access;
@@ -708,7 +746,7 @@ package body Jintp is
                                        Expr => New_Expression));
                end if;
             end if;
-            Input.Pos := New_Pos + End_String_Length (Kind, Settings);
+            Input.Pos := New_Pos + Start_String_Length (Kind, Settings);
             if Modifier = '+' or else Modifier = '-' then
                Input.Pos := Input.Pos + 1;
             end if;
@@ -748,6 +786,17 @@ package body Jintp is
                            Elements => Template_Element_Vectors.Empty_Vector));
                   elsif New_Statement.Kind = Endmacro_Statement then
                      Macro_Name := Null_Unbounded_String;
+                  elsif New_Statement.Kind = Raw_Statement then
+                     if Macro_Name = Null_Unbounded_String then
+                        Target.Elements.Append ((Line => Current_Line,
+                                                 Kind => Expression_Element,
+                                                 Expr => Get_Raw (Modifier)));
+                     else
+                        Target.Macros.Element (Macro_Name)
+                          .Elements.Append ((Line => Current_Line,
+                                             Kind => Expression_Element,
+                                             Expr => Get_Raw (Modifier)));
+                     end if;
                   else
                      if Macro_Name = Null_Unbounded_String then
                         Target.Elements.Append ((Line => Current_Line,
@@ -760,7 +809,8 @@ package body Jintp is
                                              Stmt => New_Statement));
                      end if;
                   end if;
-                  if Modifier = '-' then
+                  if Modifier = '-' or else New_Statement.Kind = Raw_Statement
+                  then
                      while Input.Pos <= Input.Buffer'Last and then
                        Jintp.Scanner.Is_Whitespace
                          (Character'Val (Input.Buffer (Input.Pos)))

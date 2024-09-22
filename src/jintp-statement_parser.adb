@@ -161,6 +161,12 @@ package body Statement_Parser is
          when Endmacro_Token =>
             Result := (Kind => Endmacro_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
+         when Raw_Token =>
+            Result := (Kind => Raw_Statement);
+            Next_Token (Scanner, Input, Current_Token, Settings);
+         when Endraw_Token =>
+            Result := (Kind => Endraw_Statement);
+            Next_Token (Scanner, Input, Current_Token, Settings);
          when others =>
             raise Template_Error with "unexpected token "
               & Current_Token.Kind'Image;
@@ -172,5 +178,23 @@ package body Statement_Parser is
       end if;
       End_Modifier := Current_Token.Modifier;
    end Parse;
+
+   function Parse_Endraw  (Input : in out Character_Iterator'Class;
+                           Settings : Environment)
+                           return Boolean
+   is
+      Scanner : Scanner_State;
+      Current_Token : Token;
+   begin
+      Next_Token (Scanner, Input, Current_Token, Settings);
+      if Current_Token.Kind /= Endraw_Token then
+         return False;
+      end if;
+      Next_Token (Scanner, Input, Current_Token, Settings);
+      if Current_Token.Kind /= Statement_End_Token then
+         return False;
+      end if;
+      return True;
+   end Parse_Endraw;
 
 end Statement_Parser;
