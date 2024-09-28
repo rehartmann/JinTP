@@ -91,7 +91,9 @@ package body Jintp is
    type Statement_Kind is (If_Statement, Elif_Statement, Else_Statement,
                            Endif_Statement, For_Statement, Endfor_Statement,
                            Include_Statement, Macro_Statement,
-                           Endmacro_Statement, Raw_Statement, Endraw_Statement);
+                           Endmacro_Statement, Raw_Statement, Endraw_Statement,
+                           Extends_Statement, Block_Statement,
+                           Endblock_Statement);
 
    type Parameter (Has_Default_Value : Boolean := False) is record
       Name : Unbounded_String;
@@ -122,6 +124,10 @@ package body Jintp is
          when Macro_Statement =>
             Macro_Name : Unbounded_String;
             Macro_Parameters : Parameter_Vectors.Vector;
+         when Extends_Statement =>
+            Parent_Name : Unbounded_String;
+         when Block_Statement =>
+            Block_Name : Unbounded_String;
          when others =>
             null;
       end case;

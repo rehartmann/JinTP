@@ -148,7 +148,7 @@ package body Statement_Parser is
          when Macro_Token =>
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= Identifier_Token then
-               raise Template_Error with "macro name expected, found"
+               raise Template_Error with "macro name expected, got "
                  & Current_Token.Kind'Image;
             end if;
             Macro_Name := Current_Token.Identifier;
@@ -167,13 +167,34 @@ package body Statement_Parser is
          when Endraw_Token =>
             Result := (Kind => Endraw_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
+         when Extends_Token =>
+            Next_Token (Scanner, Input, Current_Token, Settings);
+            if Current_Token.Kind /= String_Literal_Token then
+               raise Template_Error with "template name expected, got "
+                 & Current_Token.Kind'Image;
+            end if;
+            Result := (Kind => Extends_Statement,
+                       Parent_Name => Current_Token.String_Value);
+            Next_Token (Scanner, Input, Current_Token, Settings);
+         when Block_Token =>
+            Next_Token (Scanner, Input, Current_Token, Settings);
+            if Current_Token.Kind /= Identifier_Token then
+               raise Template_Error with "block name expected, got "
+                 & Current_Token.Kind'Image;
+            end if;
+            Result := (Kind => Block_Statement,
+                       Block_Name => Current_Token.Identifier);
+            Next_Token (Scanner, Input, Current_Token, Settings);
+         when Endblock_Token =>
+            Result := (Kind => Endblock_Statement);
+            Next_Token (Scanner, Input, Current_Token, Settings);
          when others =>
             raise Template_Error with "unexpected token "
               & Current_Token.Kind'Image;
       end case;
       Current_Token := Jintp.Scanner.Current_Token (Scanner);
       if Current_Token.Kind /= Statement_End_Token then
-         raise Template_Error with "end of statement expected, found "
+         raise Template_Error with "end of statement expected, got "
            & Current_Token.Kind'Image;
       end if;
       End_Modifier := Current_Token.Modifier;
