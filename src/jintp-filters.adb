@@ -135,7 +135,7 @@ package body Filters is
    end Is_Empty_Line;
 
    function Evaluate_Filter (Source : Expression;
-                             Resolver : Resolvers.Variable_Resolver'class)
+                             Resolver : in out Resolvers.Variable_Resolver'class)
                              return Expression_Value is
 
       function Evaluate_Batch return Expression_Value is

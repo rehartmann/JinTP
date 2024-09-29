@@ -176,6 +176,8 @@ package body Jintp is
                                  Hash => Hash,
                                  Equivalent_Keys => "=");
 
+   use Block_Maps;
+
    type Template is new Ada.Finalization.Limited_Controlled with record
       Timestamp : Time;
       Filename : Unbounded_String;
@@ -197,7 +199,7 @@ package body Jintp is
 
    use Named_Argument_Vectors;
 
-   type Expression_Kind is (Literal, Operator, Variable, Filter, Test);
+   type Expression_Kind is (Literal, Operator, Variable, Filter, Test, Super);
 
    type Expression_Access_Array is array (Positive range <>)
      of Expression_Access;
@@ -216,6 +218,8 @@ package body Jintp is
          when Operator =>
             Operator_Name : Unbounded_String;
             Named_Arguments : Named_Argument_Vectors.Vector;
+         when Super =>
+            null;
       end case;
    end record;
 
@@ -300,12 +304,17 @@ package body Jintp is
 
    package body Expression_Parser is separate;
 
+   package Template_Access_Vectors is new
+     Ada.Containers.Vectors (Index_Type => Positive,
+                             Element_Type => Template_Access);
+
    package Resolvers is
 
       type Variable_Resolver is abstract tagged limited record
          Settings : access Environment;
-         Template_Ref : Template_Access;
-         Child_Template_Ref : Template_Access := null;
+         Template_Refs : Template_Access_Vectors.Vector;
+         Current_Template_Index : Positive;
+         Current_Block_Name : Unbounded_String;
       end record;
 
       function Resolve (Resolver : Variable_Resolver;
@@ -347,10 +356,11 @@ package body Jintp is
                        return Macro_Access is
       Position : Macro_Maps.Cursor;
    begin
-      if Resolver.Template_Ref = null then
+      if Resolver.Template_Refs.Is_Empty then
          return null;
       end if;
-      Position := Macro_Maps.Find (Resolver.Template_Ref.Macros, Name);
+      Position := Macro_Maps.Find
+        (Resolver.Template_Refs.Element (Resolver.Current_Template_Index).Macros, Name);
       if Position = Macro_Maps.No_Element then
          return null;
       end if;
@@ -358,7 +368,7 @@ package body Jintp is
    end Get_Macro;
 
    function Evaluate (Source : Expression;
-                      Resolver : Resolvers.Variable_Resolver'class)
+                      Resolver : in out Resolvers.Variable_Resolver'class)
                       return Expression_Value;
 
    package Statement_Parser is
@@ -790,6 +800,7 @@ package body Jintp is
                   Current_Line := Current_Line + Line_Count (Last_Pos,
                                                              Input.Pos - 1);
                   if (Settings.Trim_Blocks and then Modifier /= '+')
+                    or else New_Statement.Kind = Block_Statement
                     or else New_Statement.Kind = Endblock_Statement
                   then
                      SkipLinebreak;
@@ -983,7 +994,7 @@ package body Jintp is
    end "<";
 
    function Evaluate (Source : Expression;
-                      Resolver : Resolvers.Variable_Resolver'Class)
+                      Resolver : in out Resolvers.Variable_Resolver'Class)
                       return Unbounded_String;
 
    function To_Float (V : Expression_Value) return Long_Float is
@@ -999,7 +1010,7 @@ package body Jintp is
 
       function Evaluate_Filter
         (Source : Expression;
-         Resolver : Resolvers.Variable_Resolver'Class)
+         Resolver : in out Resolvers.Variable_Resolver'Class)
       return Jintp.Expression_Value;
 
    end Filters;
@@ -1042,6 +1053,8 @@ package body Jintp is
             Put (File, Item.Arguments (1).all);
             Ada.Text_IO.Put (File, " is ");
             Ada.Text_IO.Put (To_String (Item.Name));
+         when Super =>
+            Ada.Text_IO.Put (File, " super()");
       end case;
    end Put;
 
@@ -1066,7 +1079,7 @@ package body Jintp is
    end Is_Numeric;
 
    function Evaluate_Add (Source : Expression;
-                          Resolver : Resolvers.Variable_Resolver'Class)
+                          Resolver : in out Resolvers.Variable_Resolver'Class)
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1100,7 +1113,7 @@ package body Jintp is
    end Evaluate_Add;
 
    function Evaluate_Subtract (Source : Expression;
-                               Resolver : Resolvers.Variable_Resolver'class)
+                               Resolver : in out Resolvers.Variable_Resolver'class)
                                return Expression_Value
    is
       Left_Arg : constant Expression_Value := Evaluate
@@ -1138,7 +1151,7 @@ package body Jintp is
    end Evaluate_Subtract;
 
    function Evaluate_Mul (Source : Expression;
-                          Resolver : Resolvers.Variable_Resolver'Class)
+                          Resolver : in out Resolvers.Variable_Resolver'Class)
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1162,7 +1175,7 @@ package body Jintp is
    end Evaluate_Mul;
 
    function Evaluate_Div (Source : Expression;
-                          Resolver : Resolvers.Variable_Resolver'Class)
+                          Resolver : in out Resolvers.Variable_Resolver'Class)
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1181,7 +1194,7 @@ package body Jintp is
    end Evaluate_Div;
 
    function Evaluate_Integer_Div (Source : Expression;
-                                  Resolver : Resolvers.Variable_Resolver'Class)
+                                  Resolver : in out Resolvers.Variable_Resolver'Class)
                                   return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1205,7 +1218,7 @@ package body Jintp is
    use Long_Float_Elementary_Functions;
 
    function Evaluate_Power (Source : Expression;
-                            Resolver : Resolvers.Variable_Resolver'Class)
+                            Resolver : in out Resolvers.Variable_Resolver'Class)
                             return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1226,7 +1239,7 @@ package body Jintp is
      (Stmt : Statement;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : Resolvers.Variable_Resolver'class);
+      Resolver : in out Resolvers.Variable_Resolver'class);
 
    function Render (Filename : String;
                     Resolver : in out Resolvers.Variable_Resolver'Class)
@@ -1246,11 +1259,10 @@ package body Jintp is
             case Element.Kind is
             when Expression_Element =>
                Append (Out_Buffer,
-                       Evaluate (Element.Expr.all, Resolver));
+                          Evaluate (Element.Expr.all, Resolver));
             when Statement_Element =>
                case Element.Stmt.Kind is
                when Extends_Statement =>
-                  Resolver.Child_Template_Ref := Resolver.Template_Ref;
                   Append (Out_Buffer,
                           Render (To_String (Element.Stmt.Parent_Name),
                             Resolver));
@@ -1273,9 +1285,64 @@ package body Jintp is
       return Out_Buffer;
    end Render;
 
+   procedure Execute_Block (Start_Index : Positive;
+                            Elements : Template_Element_Vectors.Vector;
+                            Out_Buffer : in out Unbounded_String;
+                            Resolver : in out Resolvers.Variable_Resolver'Class) is
+      Position : Template_Element_Vectors.Cursor
+        := Elements.To_Cursor (Start_Index + 1);
+      Current_Element : Template_Element;
+   begin
+      while Position /= Template_Element_Vectors.No_Element loop
+         Current_Element := Template_Element_Vectors.Element (Position);
+         case Current_Element.Kind is
+            when Expression_Element =>
+               Append (Out_Buffer,
+                       Evaluate (Current_Element.Expr.all,
+                         Resolver));
+            when Statement_Element =>
+               if Current_Element.Stmt.Kind = Endblock_Statement then
+                  exit;
+               end if;
+               Execute_Statement (Current_Element.Stmt,
+                                  Position,
+                                  Out_Buffer,
+                                  Resolver);
+         end case;
+         Position := Template_Element_Vectors.Next (Position);
+      end loop;
+   end Execute_Block;
+
+   function Evaluate_Super (Resolver : in out Resolvers.Variable_Resolver'class)
+                            return Unbounded_String
+   is
+      Old_Template_Index : constant Positive := Resolver.Current_Template_Index;
+      Out_Buffer : Unbounded_String;
+   begin
+      if Resolver.Current_Template_Index = 1 then
+         raise Template_Error with "'super' is undefined";
+      end if;
+      Resolver.Current_Template_Index := Resolver.Current_Template_Index - 1;
+      declare
+         Element_Index : constant Positive := Resolver.Template_Refs
+           (Resolver.Current_Template_Index).Block_Map (Resolver.Current_Block_Name);
+      begin
+         Execute_Block (Element_Index,
+                        Resolver.Template_Refs (Resolver.Current_Template_Index)
+                          .Elements,
+                        Out_Buffer,
+                        Resolver);
+      exception
+         when Constraint_Error =>
+            raise Template_Error with "'super' is undefined";
+      end;
+      Resolver.Current_Template_Index := Old_Template_Index;
+      return Out_Buffer;
+   end Evaluate_Super;
+
    function Evaluate_Operator
      (Source : Expression;
-      Resolver : Resolvers.Variable_Resolver'class)
+      Resolver : in out Resolvers.Variable_Resolver'class)
       return Expression_Value
    is
       Left_Arg : Expression_Value;
@@ -1509,7 +1576,7 @@ package body Jintp is
 
    function Evaluate_Test
      (Source : Expression;
-      Resolver : Resolvers.Variable_Resolver'class)
+      Resolver : in out Resolvers.Variable_Resolver'class)
       return Expression_Value
    is
       Source_Value : Expression_Value;
@@ -1635,7 +1702,7 @@ package body Jintp is
    end Evaluate_Test;
 
    function Evaluate (Source : Expression;
-                      Resolver : Resolvers.Variable_Resolver'class)
+                      Resolver : in out Resolvers.Variable_Resolver'class)
                       return Expression_Value is
    begin
       case Source.Kind is
@@ -1649,11 +1716,14 @@ package body Jintp is
             return Filters.Evaluate_Filter (Source, Resolver);
          when Test =>
             return Evaluate_Test (Source, Resolver);
+         when Super =>
+            return (Kind => String_Expression_Value,
+                    S => Evaluate_Super (Resolver));
       end case;
    end Evaluate;
 
    function Evaluate (Source : Expression;
-                      Resolver : Resolvers.Variable_Resolver'class)
+                      Resolver : in out Resolvers.Variable_Resolver'class)
                       return Unbounded_String is
    begin
       return To_Unbounded_String (Evaluate (Source, Resolver));
@@ -1677,7 +1747,7 @@ package body Jintp is
    procedure Process_Block_Elements
      (Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : Resolvers.Variable_Resolver'class)
+      Resolver : in out Resolvers.Variable_Resolver'class)
    is
       Current_Element : Template_Element;
    begin
@@ -1741,7 +1811,7 @@ package body Jintp is
      (Condition : Expression;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : Resolvers.Variable_Resolver'class)
+      Resolver : in out Resolvers.Variable_Resolver'class)
    is
       Condition_Value : constant Expression_Value := Evaluate
         (Condition, Resolver);
@@ -1884,7 +1954,7 @@ package body Jintp is
      Key_And_Value_Vectors.Generic_Sorting ("<" => Value_Less_Case_Insensitive);
 
    function Evaluate_Boolean (Source : Expression;
-                              Resolver : Resolvers.Variable_Resolver'Class)
+                              Resolver : in out Resolvers.Variable_Resolver'Class)
                               return Boolean is
       Value : constant Expression_Value := Evaluate (Source, Resolver);
    begin
@@ -1901,7 +1971,7 @@ package body Jintp is
       Variable_2_Name : Unbounded_String;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : Resolvers.Variable_Resolver'Class)
+      Resolver : in out Resolvers.Variable_Resolver'Class)
    is
       Start_Cursor : constant Template_Element_Vectors.Cursor := Current;
       Loop_Resolver : aliased Chained_Resolver;
@@ -1939,7 +2009,7 @@ package body Jintp is
       end Execute_For_Items;
 
       procedure Process_Block_Elements
-        (Resolver : Resolvers.Variable_Resolver'class)
+        (Resolver : in out Resolvers.Variable_Resolver'class)
       is
       begin
          Current := Start_Cursor;
@@ -2165,7 +2235,8 @@ package body Jintp is
 
    procedure Execute_Include (Filename : String;
                               Out_Buffer : in out Unbounded_String;
-                              Resolver : Resolvers.Variable_Resolver'Class) is
+                              Resolver : in out Resolvers.Variable_Resolver'Class)
+   is
       Included_Template : Template;
       Current : Template_Element_Vectors.Cursor;
    begin
@@ -2174,46 +2245,64 @@ package body Jintp is
       Process_Block_Elements (Current, Out_Buffer, Resolver);
    end Execute_Include;
 
+   procedure Find_Child_Block
+     (Resolver : Resolvers.Variable_Resolver'Class;
+      Name : Unbounded_String;
+      Template_Index : out Natural;
+      Element_Index : out Positive)
+   is
+      Map_Position : Block_Maps.Cursor;
+   begin
+      if Resolver.Current_Template_Index + 1 > Natural (Resolver.Template_Refs.Length)
+      then
+         Template_Index := 0;
+         Element_Index := 1; -- not a valid index, only to initialize the field
+         return;
+      end if;
+      for I in Resolver.Current_Template_Index + 1 .. Positive (Resolver.Template_Refs.Length)
+      loop
+         Map_Position := Resolver.Template_Refs (I).Block_Map.Find (Name);
+         if Map_Position /= Block_Maps.No_Element then
+            Template_Index := I;
+            Element_Index := Block_Maps.Element (Map_Position);
+            return;
+         end if;
+      end loop;
+      Template_Index := 0;
+      Element_Index := 1;
+   end Find_Child_Block;
+
    procedure Execute_Statement
      (Stmt : Statement;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : Resolvers.Variable_Resolver'Class) is
+      Resolver : in out Resolvers.Variable_Resolver'Class) is
 
       procedure Replace_Block is
-         --  !! may raise error
-         Position : Template_Element_Vectors.Cursor;
          Current_Element : Template_Element;
          Level : Natural;
-         Index : constant Positive
-           := Resolver.Child_Template_Ref.Block_Map.Element (Stmt.Block_Name)
-           + 1;
+         Template_Index : Natural;
+         Element_Index : Positive;
+         Old_Template_Index : constant Positive := Resolver.Current_Template_Index;
       begin
-         Position := Resolver.Child_Template_Ref.Elements.To_Cursor (Index);
-         while Position /= Template_Element_Vectors.No_Element loop
-            Current_Element := Template_Element_Vectors.Element (Position);
-            case Current_Element.Kind is
-            when Expression_Element =>
-               Append (Out_Buffer,
-                       Evaluate (Current_Element.Expr.all,
-                       Resolver));
-            when Statement_Element =>
-               if Current_Element.Stmt.Kind = Endblock_Statement then
-                  exit;
-               end if;
-               Execute_Statement (Current_Element.Stmt,
-                                  Position,
-                                  Out_Buffer,
-                                  Resolver);
-            end case;
-            Position := Template_Element_Vectors.Next (Position);
-         end loop;
+         Find_Child_Block (Resolver, Stmt.Block_Name,
+                           Template_Index, Element_Index);
+         if Template_Index = 0 then
+            return;
+         end if;
+         Resolver.Current_Template_Index := Template_Index;
+         Resolver.Current_Block_Name := Stmt.Block_Name;
+         Execute_Block (Element_Index,
+                        Resolver.Template_Refs (Template_Index).Elements,
+                        Out_Buffer,
+                        Resolver);
+         Resolver.Current_Template_Index := Old_Template_Index;
 
          --  Skip replaced block
          Current := Template_Element_Vectors.Next (Current);
          Level := 0;
          while Current /= Template_Element_Vectors.No_Element loop
-            Current_Element := Template_Element_Vectors.Element (Position);
+            Current_Element := Template_Element_Vectors.Element (Current);
             if Current_Element.Kind = Statement_Element then
                case Current_Element.Stmt.Kind is
                when Block_Statement =>
@@ -2250,7 +2339,7 @@ package body Jintp is
                              Out_Buffer,
                              Resolver);
          when Block_Statement =>
-            if Resolver.Child_Template_Ref /= null then
+            if Resolver.Template_Refs.Length > 0 then
                Replace_Block;
             end if;
          when others =>
@@ -2336,7 +2425,7 @@ package body Jintp is
          end;
          Must_Free := not Inserted;
       end if;
-      Resolver.Template_Ref := New_Template;
+      Resolver.Template_Refs.Prepend (New_Template);
       if Must_Free then
          declare
             Result : constant Unbounded_String
@@ -2359,8 +2448,9 @@ package body Jintp is
       Resolver : Dictionary_Resolver :=
         (Settings => Settings'Unchecked_Access,
          Values => Values,
-         Template_Ref => null,
-         Child_Template_Ref => null);
+         Template_Refs => Template_Access_Vectors.Empty_Vector,
+         Current_Template_Index => 1,
+         Current_Block_Name => Null_Unbounded_String);
    begin
       return Render (Filename, Resolver);
    end Render;
