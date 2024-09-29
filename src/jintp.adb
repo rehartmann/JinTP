@@ -170,11 +170,18 @@ package body Jintp is
                                  Hash => Hash,
                                  Equivalent_Keys => "=");
 
+   package Block_Maps is new
+     Ada.Containers.Hashed_Maps (Key_Type => Unbounded_String,
+                                 Element_Type => Positive,
+                                 Hash => Hash,
+                                 Equivalent_Keys => "=");
+
    type Template is new Ada.Finalization.Limited_Controlled with record
       Timestamp : Time;
       Filename : Unbounded_String;
       Elements : Template_Element_Vectors.Vector;
       Macros : Macro_Maps.Map;
+      Block_Map : Block_Maps.Map;
    end record;
 
    overriding procedure Finalize (Self : in out Template);
@@ -296,7 +303,9 @@ package body Jintp is
    package Resolvers is
 
       type Variable_Resolver is abstract tagged limited record
-         Settings : access constant Environment;
+         Settings : access Environment;
+         Template_Ref : Template_Access;
+         Child_Template_Ref : Template_Access := null;
       end record;
 
       function Resolve (Resolver : Variable_Resolver;
@@ -311,7 +320,6 @@ package body Jintp is
 
    type Dictionary_Resolver is new Resolvers.Variable_Resolver with record
       Values : Dictionary;
-      Template_Ref : access constant Template;
    end record;
 
    overriding function Resolve (Resolver : Dictionary_Resolver;
@@ -775,11 +783,15 @@ package body Jintp is
                                              Expr => New_Expression));
                   end if;
                when Statement_Element =>
-                  Jintp.Statement_Parser.Parse
-                    (Input, Settings, New_Statement, Modifier);
+                  Jintp.Statement_Parser.Parse (Input,
+                                                Settings,
+                                                New_Statement,
+                                                Modifier);
                   Current_Line := Current_Line + Line_Count (Last_Pos,
                                                              Input.Pos - 1);
-                  if Settings.Trim_Blocks and then Modifier /= '+' then
+                  if (Settings.Trim_Blocks and then Modifier /= '+')
+                    or else New_Statement.Kind = Endblock_Statement
+                  then
                      SkipLinebreak;
                   end if;
                   Last_Pos := Input.Pos;
@@ -808,6 +820,11 @@ package body Jintp is
                         Target.Elements.Append ((Line => Current_Line,
                                                  Kind => Statement_Element,
                                                  Stmt => New_Statement));
+                        if New_Statement.Kind = Block_Statement then
+                           Target.Block_Map.Include
+                             (New_Statement.Block_Name,
+                              Positive (Target.Elements.Length));
+                        end if;
                      else
                         Target.Macros.Element (Macro_Name)
                           .Elements.Append ((Line => Current_Line,
@@ -1211,9 +1228,13 @@ package body Jintp is
       Out_Buffer : in out Unbounded_String;
       Resolver : Resolvers.Variable_Resolver'class);
 
+   function Render (Filename : String;
+                    Resolver : in out Resolvers.Variable_Resolver'Class)
+                    return Unbounded_String;
+
    function Render (Source : Template_Element_Vectors.Vector;
                     Filename : String;
-                    Resolver : Resolvers.Variable_Resolver'Class)
+                    Resolver : in out Resolvers.Variable_Resolver'Class)
                     return Unbounded_String is
       Out_Buffer : Unbounded_String;
       Current : Template_Element_Vectors.Cursor := First (Source);
@@ -1227,7 +1248,19 @@ package body Jintp is
                Append (Out_Buffer,
                        Evaluate (Element.Expr.all, Resolver));
             when Statement_Element =>
-               Execute_Statement (Element.Stmt, Current, Out_Buffer, Resolver);
+               case Element.Stmt.Kind is
+               when Extends_Statement =>
+                  Resolver.Child_Template_Ref := Resolver.Template_Ref;
+                  Append (Out_Buffer,
+                          Render (To_String (Element.Stmt.Parent_Name),
+                            Resolver));
+                  return Out_Buffer;
+               when others =>
+                  Execute_Statement (Element.Stmt,
+                                     Current,
+                                     Out_Buffer,
+                                     Resolver);
+               end case;
             end case;
          exception
             when E : Template_Error =>
@@ -2146,6 +2179,58 @@ package body Jintp is
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
       Resolver : Resolvers.Variable_Resolver'Class) is
+
+      procedure Replace_Block is
+         --  !! may raise error
+         Position : Template_Element_Vectors.Cursor;
+         Current_Element : Template_Element;
+         Level : Natural;
+         Index : constant Positive
+           := Resolver.Child_Template_Ref.Block_Map.Element (Stmt.Block_Name)
+           + 1;
+      begin
+         Position := Resolver.Child_Template_Ref.Elements.To_Cursor (Index);
+         while Position /= Template_Element_Vectors.No_Element loop
+            Current_Element := Template_Element_Vectors.Element (Position);
+            case Current_Element.Kind is
+            when Expression_Element =>
+               Append (Out_Buffer,
+                       Evaluate (Current_Element.Expr.all,
+                       Resolver));
+            when Statement_Element =>
+               if Current_Element.Stmt.Kind = Endblock_Statement then
+                  exit;
+               end if;
+               Execute_Statement (Current_Element.Stmt,
+                                  Position,
+                                  Out_Buffer,
+                                  Resolver);
+            end case;
+            Position := Template_Element_Vectors.Next (Position);
+         end loop;
+
+         --  Skip replaced block
+         Current := Template_Element_Vectors.Next (Current);
+         Level := 0;
+         while Current /= Template_Element_Vectors.No_Element loop
+            Current_Element := Template_Element_Vectors.Element (Position);
+            if Current_Element.Kind = Statement_Element then
+               case Current_Element.Stmt.Kind is
+               when Block_Statement =>
+                  Level := Level + 1;
+               when Endblock_Statement =>
+                  if Level = 0 then
+                     exit;
+                  end if;
+                  Level := Level - 1;
+               when others =>
+                  null;
+               end case;
+            end if;
+            Current := Template_Element_Vectors.Next (Current);
+         end loop;
+      end Replace_Block;
+
    begin
       case Stmt.Kind is
          when If_Statement =>
@@ -2164,6 +2249,10 @@ package body Jintp is
             Execute_Include (To_String (Stmt.Filename),
                              Out_Buffer,
                              Resolver);
+         when Block_Statement =>
+            if Resolver.Child_Template_Ref /= null then
+               Replace_Block;
+            end if;
          when others =>
             null;
       end case;
@@ -2208,25 +2297,24 @@ package body Jintp is
       return Left.Elements.Values = Right.Elements.Values;
    end "=";
 
-   function Render (Source : Template'Class;
-                    Values : Dictionary;
-                    Settings : Environment'Class)
-                    return Unbounded_String is
-      Resolver : constant Dictionary_Resolver :=
-        (Settings => Settings'Unchecked_Access,
-         Values => Values,
-         Template_Ref => Source'Unchecked_Access);
-   begin
-      return Render (Source.Elements, To_String (Source.Filename),
-                     Resolver);
-   end Render;
+   --  function Render (Source : in out Template'Class;
+   --                   Values : Dictionary;
+   --                   Settings : in out Environment'Class)
+   --                   return Unbounded_String is
+   --     Resolver : constant Dictionary_Resolver :=
+   --       (Settings => Settings'Unchecked_Access,
+   --        Values => Values,
+   --        Template_Ref => Source'Unchecked_Access);
+   --  begin
+   --     return Render (Source.Elements, To_String (Source.Filename),
+   --                    Resolver);
+   --  end Render;
 
    function Render (Filename : String;
-                    Values : Dictionary;
-                    Settings : in out Environment'Class)
+                    Resolver : in out Resolvers.Variable_Resolver'Class)
                     return Unbounded_String is
       New_Template : Template_Access :=
-        Settings.Cached_Templates.Get (Filename);
+        Resolver.Settings.Cached_Templates.Get (Filename);
       File_Time : Time;
       Must_Free : Boolean := False;
       Inserted : Boolean;
@@ -2236,10 +2324,10 @@ package body Jintp is
          begin
             New_Template := new Template;
             New_Template.Timestamp := File_Time;
-            Get_Template (Filename, New_Template.all, Environment (Settings));
-            Settings.Cached_Templates.Put (Filename,
+            Get_Template (Filename, New_Template.all, Resolver.Settings.all);
+            Resolver.Settings.Cached_Templates.Put (Filename,
                                            New_Template,
-                                           Settings.Max_Cache_Size,
+                                           Resolver.Settings.Max_Cache_Size,
                                            Inserted);
          exception
             when others =>
@@ -2248,19 +2336,33 @@ package body Jintp is
          end;
          Must_Free := not Inserted;
       end if;
+      Resolver.Template_Ref := New_Template;
       if Must_Free then
          declare
             Result : constant Unbounded_String
-              := Render (New_Template.all, Values, Settings);
+              := Render (New_Template.Elements, Filename, Resolver);
          begin
             Free_Template (New_Template);
             return Result;
          end;
       end if;
-      return Render (New_Template.all, Values, Settings);
+      return Render (New_Template.Elements, Filename, Resolver);
    exception
       when Name_Error =>
          raise Template_Error with "template not found: " & Filename;
+   end Render;
+
+   function Render (Filename : String;
+                    Values : Dictionary;
+                    Settings : in out Environment'Class)
+                    return Unbounded_String is
+      Resolver : Dictionary_Resolver :=
+        (Settings => Settings'Unchecked_Access,
+         Values => Values,
+         Template_Ref => null,
+         Child_Template_Ref => null);
+   begin
+      return Render (Filename, Resolver);
    end Render;
 
    function Render (Filename : String;
