@@ -12,10 +12,10 @@ package body Statement_Parser is
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
       Value : out Expression_Value;
-      Settings : Environment) is
+      Settings : Environment'Class) is
       Expression : Expression_Access := Jintp.Expression_Parser.Parse
         (Scanner, Input, Settings);
-      Resolver : Jintp.Dictionary_Resolver;
+      Resolver : Jintp.Root_Context;
    begin
       Value := Evaluate (Expression.all, Resolver);
       Delete_Expression (Expression);
@@ -28,7 +28,7 @@ package body Statement_Parser is
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
       Parameters : out Parameter_Vectors.Vector;
-      Settings : Environment) is
+      Settings : Environment'Class) is
       Name : Unbounded_String;
       Default_Value : Expression_Value;
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
@@ -74,7 +74,7 @@ package body Statement_Parser is
    end Parse_Parameters;
 
    procedure Parse (Input : in out Character_Iterator'Class;
-                    Settings : Environment;
+                    Settings : Environment'Class;
                     Result : out Statement;
                     End_Modifier : out Character) is
       Control_Expression : Expression_Access;
@@ -201,7 +201,7 @@ package body Statement_Parser is
    end Parse;
 
    function Parse_Endraw  (Input : in out Character_Iterator'Class;
-                           Settings : Environment)
+                           Settings : Environment'Class)
                            return Boolean
    is
       Scanner : Scanner_State;

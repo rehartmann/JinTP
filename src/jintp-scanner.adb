@@ -48,7 +48,7 @@ package body Jintp.Scanner is
                         State : in out Scanner_State;
                         Input : in out Character_Iterator'Class;
                         Result : out Token;
-                        Settings : Environment) is
+                        Settings : Environment'Class) is
       C : Character := Next (Input);
       Buffer : Unbounded_String;
       Matches : Boolean;

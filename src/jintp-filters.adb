@@ -135,7 +135,7 @@ package body Filters is
    end Is_Empty_Line;
 
    function Evaluate_Filter (Source : Expression;
-                             Resolver : in out Resolvers.Variable_Resolver'class)
+                             Resolver : in out Contexts.Context'class)
                              return Expression_Value is
 
       function Evaluate_Batch return Expression_Value is
@@ -818,7 +818,7 @@ package body Filters is
          Args : Unbounded_String_Array (1 .. Argument_Capacity);
          I : Natural;
       begin
-         Custom_Filter := Resolver.Settings.Filters (Source.Name);
+         Custom_Filter := Resolver.Get_Environment.Filters (Source.Name);
          Args (1) := To_Unbounded_String (Source_Value);
          I := 2;
          while Source.Arguments (I) /= null loop

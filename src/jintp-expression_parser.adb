@@ -11,13 +11,13 @@ package body Expression_Parser is
    function Parse_Primitive
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment)
+      Settings : Environment'Class)
       return Jintp.Expression_Access;
 
    function Parse_List
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment)
+      Settings : Environment'Class)
       return Jintp.Expression_Access
    is
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
@@ -70,7 +70,7 @@ package body Expression_Parser is
    function Parse_Dictionary
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment)
+      Settings : Environment'Class)
       return Jintp.Expression_Access
    is
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
@@ -164,13 +164,13 @@ package body Expression_Parser is
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
       Arguments : out Named_Argument_Vectors.Vector;
-      Settings : Environment;
+      Settings : Environment'Class;
       Named_Arguments_All_Or_None : Boolean := True);
 
    function Parse_Primitive
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment)
+      Settings : Environment'Class)
       return Jintp.Expression_Access
    is
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
@@ -311,7 +311,7 @@ package body Expression_Parser is
 
    function Parse_Power (Scanner : in out Scanner_State;
                    Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment)
+                   Settings : Environment'Class)
                    return Jintp.Expression_Access is
       Right_Expression : Expression_Access;
       Result : Expression_Access := Parse_Primitive (Scanner, Input, Settings);
@@ -336,7 +336,7 @@ package body Expression_Parser is
 
    function Parse_Unary (Scanner : in out Scanner_State;
                    Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment)
+                   Settings : Environment'Class)
                    return Jintp.Expression_Access is
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
       Operator_Name : Unbounded_String;
@@ -360,7 +360,7 @@ package body Expression_Parser is
 
    function Parse_Mul_Div (Scanner : in out Scanner_State;
                    Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment)
+                   Settings : Environment'Class)
                    return Jintp.Expression_Access is
       Right_Expression : Expression_Access;
       Result : Expression_Access := Parse_Unary (Scanner, Input, Settings);
@@ -393,7 +393,7 @@ package body Expression_Parser is
 
    function Parse_Add_Sub (Scanner : in out Scanner_State;
                    Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment)
+                   Settings : Environment'Class)
                    return Jintp.Expression_Access is
       Right_Expression : Expression_Access;
       Result : Expression_Access := Parse_Mul_Div (Scanner, Input, Settings);
@@ -454,7 +454,7 @@ package body Expression_Parser is
    function Parse_Comparison
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment)
+      Settings : Environment'Class)
       return Jintp.Expression_Access
    is
       Current_Token : Token;
@@ -516,7 +516,7 @@ package body Expression_Parser is
 
    function Parse_Not (Scanner : in out Scanner_State;
                    Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment)
+                   Settings : Environment'Class)
                    return Jintp.Expression_Access is
       Result : Expression_Access;
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
@@ -541,7 +541,7 @@ package body Expression_Parser is
 
    function Parse_And (Scanner : in out Scanner_State;
                    Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment)
+                   Settings : Environment'Class)
                    return Jintp.Expression_Access is
       Right_Expression : Expression_Access;
       Result : Expression_Access := Parse_Not (Scanner, Input, Settings);
@@ -566,7 +566,7 @@ package body Expression_Parser is
 
    function Parse_Or (Scanner : in out Scanner_State;
                    Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment)
+                   Settings : Environment'Class)
                        return Jintp.Expression_Access is
       Right_Expression : Expression_Access;
       Result : Expression_Access := Parse_And (Scanner, Input, Settings);
@@ -619,7 +619,7 @@ package body Expression_Parser is
      (Scanner : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
       Arguments : out Named_Argument_Vectors.Vector;
-      Settings : Environment;
+      Settings : Environment'Class;
       Named_Arguments_All_Or_None : Boolean := True)
    is
       Argument : Named_Argument;
@@ -871,7 +871,7 @@ package body Expression_Parser is
 
    function Parse (Scanner : in out Scanner_State;
                    Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment)
+                   Settings : Environment'Class)
                    return Jintp.Expression_Access is
       Result : Expression_Access := Parse_Or (Scanner, Input, Settings);
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
@@ -906,7 +906,7 @@ package body Expression_Parser is
 
    function Parse_With_End (
      Input : in out Jintp.Input.Character_Iterator'Class;
-     Settings : Environment)
+     Settings : Environment'Class)
      return Jintp.Expression_Access is
       Scanner : Scanner_State;
       Result : Expression_Access;

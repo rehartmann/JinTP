@@ -49,7 +49,7 @@ package Jintp.Scanner is
      (State : in out Scanner_State;
       Input : in out Jintp.Input.Character_Iterator'Class;
       Result : out Token;
-      Settings : Environment);
+      Settings : Environment'Class);
 
    function Current_Token (State : Scanner_State) return Token;
 

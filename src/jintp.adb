@@ -292,12 +292,12 @@ package body Jintp is
       function Parse
         (Scanner : in out Jintp.Scanner.Scanner_State;
          Input : in out Jintp.Input.Character_Iterator'Class;
-         Settings : Environment)
+         Settings : Environment'Class)
          return Jintp.Expression_Access;
 
       function Parse_With_End
         (Input : in out Jintp.Input.Character_Iterator'Class;
-         Settings : Environment)
+         Settings : Environment'Class)
          return Jintp.Expression_Access;
 
    end Expression_Parser;
@@ -308,38 +308,104 @@ package body Jintp is
      Ada.Containers.Vectors (Index_Type => Positive,
                              Element_Type => Template_Access);
 
-   package Resolvers is
+   type Environment_Access is access all Environment'Class;
 
-      type Variable_Resolver is abstract tagged limited record
-         Settings : access Environment;
-         Template_Refs : Template_Access_Vectors.Vector;
-         Current_Template_Index : Positive;
-         Current_Block_Name : Unbounded_String;
+   package Contexts is
+
+      type Context is abstract tagged limited record
+         null;
       end record;
 
-      function Resolve (Resolver : Variable_Resolver;
+      function Resolve (Resolver : Context;
                         Name : Unbounded_String)
                         return Expression_Value is abstract;
 
-      function Get_Macro (Resolver : Variable_Resolver;
+      function Get_Macro (Resolver : Context;
                           Name : Unbounded_String)
                           return Macro_Access is abstract;
 
-   end Resolvers;
+      function Get_Environment (Resolver : Context)
+                                return Environment_Access is abstract;
 
-   type Dictionary_Resolver is new Resolvers.Variable_Resolver with record
+      function Current_Template (Resolver : Context)
+                                 return Template_Access is abstract;
+
+      function Current_Template_Index (Resolver : Context)
+                                 return Natural is abstract;
+
+      procedure Set_Current_Template_Index (Resolver : in out Context;
+                                            Index : Positive)
+      is abstract;
+
+      function Template_Count (Resolver : Context)
+                               return Natural
+                               is abstract;
+
+      function Get_Template (Resolver : Context;
+                             Index : Positive)
+                             return Template_Access
+                             is abstract;
+
+      procedure Add_Parent_Template (Resolver : in out Context;
+                                    Item : Template_Access)
+                                    is abstract;
+
+      function Current_Block_Name (Resolver : Context)
+                                   return Unbounded_String is abstract;
+
+      procedure Set_Current_Block_Name (Resolver : in out Context;
+                                        Block_Name : Unbounded_String)
+      is abstract;
+
+   end Contexts;
+
+   type Root_Context is new Contexts.Context with record
+      Settings : Environment_Access;
+      Template_Refs : Template_Access_Vectors.Vector;
+      Template_Index : Positive;
+      Block_Name : Unbounded_String;
       Values : Dictionary;
    end record;
 
-   overriding function Resolve (Resolver : Dictionary_Resolver;
+   overriding function Resolve (Resolver : Root_Context;
                                 Name : Unbounded_String)
                                 return Expression_Value;
 
-   overriding function Get_Macro (Resolver : Dictionary_Resolver;
+   overriding function Get_Macro (Resolver : Root_Context;
                        Name : Unbounded_String)
                        return Macro_Access;
 
-   overriding function Resolve (Resolver : Dictionary_Resolver;
+   overriding function Get_Environment (Resolver : Root_Context)
+                                        return Environment_Access;
+
+   overriding function Current_Template (Resolver : Root_Context)
+                                         return Template_Access;
+
+   overriding function Current_Template_Index (Resolver : Root_Context)
+                                         return Natural;
+
+   overriding procedure Set_Current_Template_Index
+     (Resolver : in out Root_Context;
+      Index : Positive);
+
+   overriding function Template_Count (Resolver : Root_Context)
+                                       return Natural;
+
+   overriding function Get_Template (Resolver : Root_Context;
+                                     Index : Positive)
+                                     return Template_Access;
+
+   overriding procedure Add_Parent_Template (Resolver : in out Root_Context;
+                                             Item : Template_Access);
+
+   overriding function Current_Block_Name (Resolver : Root_Context)
+                                           return Unbounded_String;
+
+   overriding procedure Set_Current_Block_Name
+     (Resolver : in out Root_Context;
+      Block_Name : Unbounded_String);
+
+   overriding function Resolve (Resolver : Root_Context;
                                 Name : Unbounded_String)
                                 return Expression_Value is
    begin
@@ -351,7 +417,7 @@ package body Jintp is
 
    use Macro_Maps;
 
-   overriding function Get_Macro (Resolver : Dictionary_Resolver;
+   overriding function Get_Macro (Resolver : Root_Context;
                        Name : Unbounded_String)
                        return Macro_Access is
       Position : Macro_Maps.Cursor;
@@ -367,8 +433,68 @@ package body Jintp is
       return Element (Position);
    end Get_Macro;
 
+   overriding function Get_Environment (Resolver : Root_Context)
+                                        return Environment_Access is
+   begin
+      return Resolver.Settings;
+   end Get_Environment;
+
+   overriding function Current_Template (Resolver : Root_Context)
+                                         return Template_Access is
+   begin
+      return Resolver.Template_Refs (Resolver.Current_Template_Index);
+   end Current_Template;
+
+   overriding function Current_Template_Index (Resolver : Root_Context)
+                                         return Natural is
+   begin
+      if Resolver.Template_Refs.Is_Empty then
+         return 0;
+      end if;
+      return Resolver.Template_Index;
+   end Current_Template_Index;
+
+   overriding procedure Set_Current_Template_Index (Resolver : in out Root_Context;
+                                                    Index : Positive)
+   is
+   begin
+      Resolver.Template_Index := Index;
+   end Set_Current_Template_Index;
+
+   overriding function Template_Count (Resolver : Root_Context)
+                                       return Natural is
+   begin
+      return Natural (Resolver.Template_Refs.Length);
+   end Template_Count;
+
+   overriding function Get_Template (Resolver : Root_Context;
+                                     Index : Positive)
+                                     return Template_Access is
+   begin
+      return Resolver.Template_Refs (Index);
+   end Get_Template;
+
+   overriding procedure Add_Parent_Template (Resolver : in out Root_Context;
+                                             Item : Template_Access) is
+   begin
+      Resolver.Template_Refs.Prepend (Item);
+   end Add_Parent_Template;
+
+   overriding function Current_Block_Name (Resolver : Root_Context)
+                                                return Unbounded_String is
+   begin
+      return Resolver.Block_Name;
+   end Current_Block_Name;
+
+   overriding procedure Set_Current_Block_Name
+     (Resolver : in out Root_Context;
+      Block_Name : Unbounded_String) is
+   begin
+      Resolver.Block_Name := Block_Name;
+   end Set_Current_Block_Name;
+
    function Evaluate (Source : Expression;
-                      Resolver : in out Resolvers.Variable_Resolver'class)
+                      Resolver : in out Contexts.Context'class)
                       return Expression_Value;
 
    package Statement_Parser is
@@ -376,12 +502,12 @@ package body Jintp is
       use Jintp.Input;
 
       procedure Parse (Input : in out Character_Iterator'Class;
-                       Settings : Environment;
+                       Settings : Environment'Class;
                        Result : out Statement;
                        End_Modifier : out Character);
 
       function Parse_Endraw  (Input : in out Character_Iterator'Class;
-                              Settings : Environment)
+                              Settings : Environment'Class)
                               return Boolean;
 
    end Statement_Parser;
@@ -533,8 +659,8 @@ package body Jintp is
    end Match;
 
    function Start_String_Length (Kind : Tag_Kind;
-                               Settings : Environment)
-                               return Stream_Element_Offset is
+                                 Settings : Environment'Class)
+                                 return Stream_Element_Offset is
    begin
       case Kind is
          when Expression_Element =>
@@ -548,7 +674,7 @@ package body Jintp is
 
    procedure Get_Template (Filename : String;
                            Target : out Template;
-                           Settings : Environment := Default_Environment) is
+                           Settings : Environment'Class := Default_Environment) is
       Input : File_Parser_Input;
 
       function Buffer_Matches (Str : Unbounded_String;
@@ -844,6 +970,7 @@ package body Jintp is
                      end if;
                   end if;
                   if Modifier = '-' or else New_Statement.Kind = Raw_Statement
+                    or else New_Statement.Kind = Block_Statement
                   then
                      while Input.Pos <= Input.Buffer'Last and then
                        Jintp.Scanner.Is_Whitespace
@@ -994,7 +1121,7 @@ package body Jintp is
    end "<";
 
    function Evaluate (Source : Expression;
-                      Resolver : in out Resolvers.Variable_Resolver'Class)
+                      Resolver : in out Contexts.Context'Class)
                       return Unbounded_String;
 
    function To_Float (V : Expression_Value) return Long_Float is
@@ -1010,7 +1137,7 @@ package body Jintp is
 
       function Evaluate_Filter
         (Source : Expression;
-         Resolver : in out Resolvers.Variable_Resolver'Class)
+         Resolver : in out Contexts.Context'Class)
       return Jintp.Expression_Value;
 
    end Filters;
@@ -1079,7 +1206,7 @@ package body Jintp is
    end Is_Numeric;
 
    function Evaluate_Add (Source : Expression;
-                          Resolver : in out Resolvers.Variable_Resolver'Class)
+                          Resolver : in out Contexts.Context'Class)
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1113,7 +1240,7 @@ package body Jintp is
    end Evaluate_Add;
 
    function Evaluate_Subtract (Source : Expression;
-                               Resolver : in out Resolvers.Variable_Resolver'class)
+                               Resolver : in out Contexts.Context'class)
                                return Expression_Value
    is
       Left_Arg : constant Expression_Value := Evaluate
@@ -1151,7 +1278,7 @@ package body Jintp is
    end Evaluate_Subtract;
 
    function Evaluate_Mul (Source : Expression;
-                          Resolver : in out Resolvers.Variable_Resolver'Class)
+                          Resolver : in out Contexts.Context'Class)
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1175,7 +1302,7 @@ package body Jintp is
    end Evaluate_Mul;
 
    function Evaluate_Div (Source : Expression;
-                          Resolver : in out Resolvers.Variable_Resolver'Class)
+                          Resolver : in out Contexts.Context'Class)
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1194,7 +1321,7 @@ package body Jintp is
    end Evaluate_Div;
 
    function Evaluate_Integer_Div (Source : Expression;
-                                  Resolver : in out Resolvers.Variable_Resolver'Class)
+                                  Resolver : in out Contexts.Context'Class)
                                   return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1218,7 +1345,7 @@ package body Jintp is
    use Long_Float_Elementary_Functions;
 
    function Evaluate_Power (Source : Expression;
-                            Resolver : in out Resolvers.Variable_Resolver'Class)
+                            Resolver : in out Contexts.Context'Class)
                             return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1239,15 +1366,15 @@ package body Jintp is
      (Stmt : Statement;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : in out Resolvers.Variable_Resolver'class);
+      Resolver : in out Contexts.Context'Class);
 
    function Render (Filename : String;
-                    Resolver : in out Resolvers.Variable_Resolver'Class)
+                    Resolver : in out Contexts.Context'Class)
                     return Unbounded_String;
 
    function Render (Source : Template_Element_Vectors.Vector;
                     Filename : String;
-                    Resolver : in out Resolvers.Variable_Resolver'Class)
+                    Resolver : in out Contexts.Context'Class)
                     return Unbounded_String is
       Out_Buffer : Unbounded_String;
       Current : Template_Element_Vectors.Cursor := First (Source);
@@ -1288,7 +1415,7 @@ package body Jintp is
    procedure Execute_Block (Start_Index : Positive;
                             Elements : Template_Element_Vectors.Vector;
                             Out_Buffer : in out Unbounded_String;
-                            Resolver : in out Resolvers.Variable_Resolver'Class) is
+                            Resolver : in out Contexts.Context'Class) is
       Position : Template_Element_Vectors.Cursor
         := Elements.To_Cursor (Start_Index + 1);
       Current_Element : Template_Element;
@@ -1313,7 +1440,7 @@ package body Jintp is
       end loop;
    end Execute_Block;
 
-   function Evaluate_Super (Resolver : in out Resolvers.Variable_Resolver'class)
+   function Evaluate_Super (Resolver : in out Contexts.Context'Class)
                             return Unbounded_String
    is
       Old_Template_Index : constant Positive := Resolver.Current_Template_Index;
@@ -1322,27 +1449,26 @@ package body Jintp is
       if Resolver.Current_Template_Index = 1 then
          raise Template_Error with "'super' is undefined";
       end if;
-      Resolver.Current_Template_Index := Resolver.Current_Template_Index - 1;
+      Resolver.Set_Current_Template_Index (Resolver.Current_Template_Index - 1);
       declare
-         Element_Index : constant Positive := Resolver.Template_Refs
-           (Resolver.Current_Template_Index).Block_Map (Resolver.Current_Block_Name);
+         Element_Index : constant Positive := Resolver.Current_Template
+           .Block_Map (Resolver.Current_Block_Name);
       begin
          Execute_Block (Element_Index,
-                        Resolver.Template_Refs (Resolver.Current_Template_Index)
-                          .Elements,
+                        Resolver.Current_Template.Elements,
                         Out_Buffer,
                         Resolver);
       exception
          when Constraint_Error =>
             raise Template_Error with "'super' is undefined";
       end;
-      Resolver.Current_Template_Index := Old_Template_Index;
+      Resolver.Set_Current_Template_Index (Old_Template_Index);
       return Out_Buffer;
    end Evaluate_Super;
 
    function Evaluate_Operator
      (Source : Expression;
-      Resolver : in out Resolvers.Variable_Resolver'class)
+      Resolver : in out Contexts.Context'Class)
       return Expression_Value
    is
       Left_Arg : Expression_Value;
@@ -1531,7 +1657,7 @@ package body Jintp is
       Macro := Resolver.Get_Macro (Source.Operator_Name);
       if Macro /= null then
          declare
-            Macro_Resolver : Dictionary_Resolver;
+            Macro_Resolver : Root_Context;
             Position : Named_Argument_Vectors.Cursor;
          begin
             for I in 1 .. Macro.Parameters.Length loop
@@ -1567,7 +1693,7 @@ package body Jintp is
                end if;
             end loop;
             return (Kind => String_Expression_Value,
-                   S => Render (Macro.Elements, "", Macro_Resolver));
+                    S => Render (Macro.Elements, "", Macro_Resolver));
          end;
       end if;
 
@@ -1576,7 +1702,7 @@ package body Jintp is
 
    function Evaluate_Test
      (Source : Expression;
-      Resolver : in out Resolvers.Variable_Resolver'class)
+      Resolver : in out Contexts.Context'class)
       return Expression_Value
    is
       Source_Value : Expression_Value;
@@ -1586,7 +1712,7 @@ package body Jintp is
             raise Template_Error with "variable expected";
          end if;
          begin
-            Source_Value := Resolvers.Resolve (Resolver,
+            Source_Value := Contexts.Resolve (Resolver,
                                                Source.Arguments (1)
                                                  .Variable_Name);
             return (Kind => Boolean_Expression_Value,
@@ -1604,7 +1730,7 @@ package body Jintp is
             raise Template_Error with "variable expected";
          end if;
          begin
-            Source_Value := Resolvers.Resolve (Resolver,
+            Source_Value := Contexts.Resolve (Resolver,
                                                Source.Arguments (1)
                                                .Variable_Name);
             return (Kind => Boolean_Expression_Value,
@@ -1702,14 +1828,14 @@ package body Jintp is
    end Evaluate_Test;
 
    function Evaluate (Source : Expression;
-                      Resolver : in out Resolvers.Variable_Resolver'class)
+                      Resolver : in out Contexts.Context'class)
                       return Expression_Value is
    begin
       case Source.Kind is
          when Literal =>
             return Source.Value;
          when Variable =>
-            return Resolvers.Resolve (Resolver, Source.Variable_Name);
+            return Contexts.Resolve (Resolver, Source.Variable_Name);
          when Operator =>
             return Evaluate_Operator (Source, Resolver);
          when Filter =>
@@ -1723,7 +1849,7 @@ package body Jintp is
    end Evaluate;
 
    function Evaluate (Source : Expression;
-                      Resolver : in out Resolvers.Variable_Resolver'class)
+                      Resolver : in out Contexts.Context'class)
                       return Unbounded_String is
    begin
       return To_Unbounded_String (Evaluate (Source, Resolver));
@@ -1747,7 +1873,7 @@ package body Jintp is
    procedure Process_Block_Elements
      (Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : in out Resolvers.Variable_Resolver'class)
+      Resolver : in out Contexts.Context'class)
    is
       Current_Element : Template_Element;
    begin
@@ -1777,7 +1903,7 @@ package body Jintp is
 
    procedure Skip_Block_Elements
      (Current : in out Template_Element_Vectors.Cursor;
-      Resolver : Resolvers.Variable_Resolver'class)
+      Resolver : Contexts.Context'class)
    is
       pragma Unreferenced (Resolver);
       Current_Element : Template_Element;
@@ -1811,7 +1937,7 @@ package body Jintp is
      (Condition : Expression;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : in out Resolvers.Variable_Resolver'class)
+      Resolver : in out Contexts.Context'class)
    is
       Condition_Value : constant Expression_Value := Evaluate
         (Condition, Resolver);
@@ -1841,19 +1967,49 @@ package body Jintp is
       end if;
    end Execute_If;
 
-   type Chained_Resolver is new Resolvers.Variable_Resolver with record
-      Parent_Resolver : access constant Resolvers.Variable_Resolver'Class;
+   type Chained_Context is new Contexts.Context with record
+      Parent_Resolver : access Contexts.Context'Class;
       Variable_Name : Unbounded_String;
       Variable_Value : Expression_Value;
       Index : Natural;
       Length : Ada.Containers.Count_Type;
    end record;
 
-   overriding function Get_Macro (Resolver : Chained_Resolver;
+   overriding function Get_Macro (Resolver : Chained_Context;
                                   Name : Unbounded_String)
                                   return Macro_Access;
 
-   overriding function Resolve (Resolver : Chained_Resolver;
+   overriding function Get_Environment (Resolver : Chained_Context)
+                                        return Environment_Access;
+
+   overriding function Current_Template (Resolver : Chained_Context)
+                                         return Template_Access;
+
+   overriding function Current_Template_Index (Resolver : Chained_Context)
+                                               return Natural;
+
+   overriding procedure Set_Current_Template_Index
+     (Resolver : in out Chained_Context;
+      Index : Positive);
+
+   overriding function Template_Count (Resolver : Chained_Context)
+                                       return Natural;
+
+   overriding function Get_Template (Resolver : Chained_Context;
+                                     Index : Positive)
+                                     return Template_Access;
+
+   overriding procedure Add_Parent_Template (Resolver : in out Chained_Context;
+                                             Item : Template_Access);
+
+   overriding function Current_Block_Name (Resolver : Chained_Context)
+                                   return Unbounded_String;
+
+   overriding procedure Set_Current_Block_Name
+     (Resolver : in out Chained_Context;
+      Block_Name : Unbounded_String);
+
+   overriding function Resolve (Resolver : Chained_Context;
                      Name : Unbounded_String)
                      return Expression_Value is
    begin
@@ -1888,15 +2044,72 @@ package body Jintp is
       if Name = Resolver.Variable_Name then
          return Resolver.Variable_Value;
       end if;
-      return Resolvers.Resolve (Resolver.Parent_Resolver.all, Name);
+      return Contexts.Resolve (Resolver.Parent_Resolver.all, Name);
    end Resolve;
 
-   overriding function Get_Macro (Resolver : Chained_Resolver;
+   overriding function Get_Macro (Resolver : Chained_Context;
                                   Name : Unbounded_String)
                                   return Macro_Access is
    begin
-      return Resolvers.Get_Macro (Resolver.Parent_Resolver.all, Name);
+      return Contexts.Get_Macro (Resolver.Parent_Resolver.all, Name);
    end Get_Macro;
+
+   overriding function Get_Environment (Resolver : Chained_Context)
+                                        return Environment_Access is
+   begin
+      return Resolver.Parent_Resolver.Get_Environment;
+   end Get_Environment;
+
+   overriding function Current_Template (Resolver : Chained_Context)
+                                         return Template_Access is
+   begin
+      return Resolver.Parent_Resolver.Current_Template;
+   end Current_Template;
+
+   overriding function Current_Template_Index (Resolver : Chained_Context)
+                                               return Natural is
+   begin
+      return Resolver.Parent_Resolver.Current_Template_Index;
+   end Current_Template_Index;
+
+   overriding procedure Set_Current_Template_Index
+     (Resolver : in out Chained_Context;
+      Index : Positive) is
+   begin
+      Resolver.Parent_Resolver.Set_Current_Template_Index (Index);
+   end Set_Current_Template_Index;
+
+   overriding function Template_Count (Resolver : Chained_Context)
+                                       return Natural is
+   begin
+      return Resolver.Parent_Resolver.Template_Count;
+   end Template_Count;
+
+   overriding function Get_Template (Resolver : Chained_Context;
+                                     Index : Positive)
+                                     return Template_Access is
+   begin
+      return Resolver.Parent_Resolver.Get_Template (Index);
+   end Get_Template;
+
+   overriding procedure Add_Parent_Template (Resolver : in out Chained_Context;
+                                             Item : Template_Access) is
+   begin
+      Resolver.Parent_Resolver.Add_Parent_Template (Item);
+   end Add_Parent_Template;
+
+   overriding function Current_Block_Name (Resolver : Chained_Context)
+                                           return Unbounded_String is
+   begin
+      return Resolver.Parent_Resolver.Current_Block_Name;
+   end Current_Block_Name;
+
+   overriding procedure Set_Current_Block_Name
+     (Resolver : in out Chained_Context;
+      Block_Name : Unbounded_String) is
+   begin
+      Resolver.Parent_Resolver.Set_Current_Block_Name (Block_Name);
+   end Set_Current_Block_Name;
 
    package Value_Sorting is new
      Expression_Value_Vectors.Generic_Sorting ("<" => "<");
@@ -1954,7 +2167,7 @@ package body Jintp is
      Key_And_Value_Vectors.Generic_Sorting ("<" => Value_Less_Case_Insensitive);
 
    function Evaluate_Boolean (Source : Expression;
-                              Resolver : in out Resolvers.Variable_Resolver'Class)
+                              Resolver : in out Contexts.Context'Class)
                               return Boolean is
       Value : constant Expression_Value := Evaluate (Source, Resolver);
    begin
@@ -1971,12 +2184,12 @@ package body Jintp is
       Variable_2_Name : Unbounded_String;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : in out Resolvers.Variable_Resolver'Class)
+      Resolver : in out Contexts.Context'Class)
    is
       Start_Cursor : constant Template_Element_Vectors.Cursor := Current;
-      Loop_Resolver : aliased Chained_Resolver;
+      Loop_Resolver : aliased Chained_Context;
       Empty_Loop : Boolean := True;
-      Value_Resolver : Chained_Resolver;
+      Value_Resolver : Chained_Context;
       I : Natural;
 
       procedure Execute_For_Items is
@@ -1992,7 +2205,6 @@ package body Jintp is
          I := 0;
          for C in Collection_Value.Dictionary_Value.Assocs.Value_Assocs.Iterate
          loop
-            Value_Resolver.Settings := Resolver.Settings;
             Loop_Resolver.Variable_Name := Variable_1_Name;
             Loop_Resolver.Variable_Value := Key (C);
             Value_Resolver.Variable_Name := Variable_2_Name;
@@ -2009,7 +2221,7 @@ package body Jintp is
       end Execute_For_Items;
 
       procedure Process_Block_Elements
-        (Resolver : in out Resolvers.Variable_Resolver'class)
+        (Resolver : in out Contexts.Context'class)
       is
       begin
          Current := Start_Cursor;
@@ -2024,7 +2236,7 @@ package body Jintp is
                              Case_Sensitive : Boolean;
                              Reverse_Sort : Boolean) is
          Keys : Expression_Value_Vectors.Vector;
-         Value_Resolver : Chained_Resolver;
+         Value_Resolver : Chained_Context;
       begin
          for C in Value_Assocs.Iterate loop
             Append (Keys, Key (C));
@@ -2042,7 +2254,6 @@ package body Jintp is
                Value_Resolver.Variable_Name := Variable_2_Name;
                Value_Resolver.Variable_Value := Value_Assocs (Keys (I));
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               Value_Resolver.Settings := Resolver.Settings;
                Value_Resolver.Index := Natural (Value_Resolver.Length) - 1 - I;
                Process_Block_Elements (Value_Resolver);
             end loop;
@@ -2053,7 +2264,6 @@ package body Jintp is
                Value_Resolver.Variable_Name := Variable_2_Name;
                Value_Resolver.Variable_Value := Value_Assocs (Keys (I));
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               Value_Resolver.Settings := Resolver.Settings;
                Value_Resolver.Index := I;
                Process_Block_Elements (Value_Resolver);
             end loop;
@@ -2064,7 +2274,7 @@ package body Jintp is
                                Case_Sensitive : Boolean;
                                Reverse_Sort : Boolean) is
          Items : Key_And_Value_Vectors.Vector;
-         Value_Resolver : Chained_Resolver;
+         Value_Resolver : Chained_Context;
       begin
          for C in Value_Assocs.Iterate loop
             Append (Items,
@@ -2084,7 +2294,6 @@ package body Jintp is
                Value_Resolver.Variable_Name := Variable_2_Name;
                Value_Resolver.Variable_Value := Items (I).Value;
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               Value_Resolver.Settings := Resolver.Settings;
                Value_Resolver.Index := Natural (Value_Resolver.Length) - 1 - I;
                Process_Block_Elements (Value_Resolver);
             end loop;
@@ -2095,7 +2304,6 @@ package body Jintp is
                Value_Resolver.Variable_Name := Variable_2_Name;
                Value_Resolver.Variable_Value := Items (I).Value;
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               Value_Resolver.Settings := Resolver.Settings;
                Value_Resolver.Index := I;
                Process_Block_Elements (Value_Resolver);
             end loop;
@@ -2204,7 +2412,6 @@ package body Jintp is
 
    begin
       Loop_Resolver.Parent_Resolver := Resolver'Unchecked_Access;
-      Loop_Resolver.Settings := Resolver.Settings;
       if Collection.Kind = Operator
         and then Collection.Operator_Name = "items"
       then
@@ -2235,33 +2442,33 @@ package body Jintp is
 
    procedure Execute_Include (Filename : String;
                               Out_Buffer : in out Unbounded_String;
-                              Resolver : in out Resolvers.Variable_Resolver'Class)
+                              Resolver : in out Contexts.Context'Class)
    is
       Included_Template : Template;
       Current : Template_Element_Vectors.Cursor;
    begin
-      Get_Template (Filename, Included_Template, Resolver.Settings.all);
+      Get_Template (Filename, Included_Template, Resolver.Get_Environment.all);
       Current := First (Included_Template.Elements);
       Process_Block_Elements (Current, Out_Buffer, Resolver);
    end Execute_Include;
 
    procedure Find_Child_Block
-     (Resolver : Resolvers.Variable_Resolver'Class;
+     (Resolver : Contexts.Context'Class;
       Name : Unbounded_String;
       Template_Index : out Natural;
       Element_Index : out Positive)
    is
       Map_Position : Block_Maps.Cursor;
    begin
-      if Resolver.Current_Template_Index + 1 > Natural (Resolver.Template_Refs.Length)
+      if Resolver.Current_Template_Index + 1 > Resolver.Template_Count
       then
          Template_Index := 0;
          Element_Index := 1; -- not a valid index, only to initialize the field
          return;
       end if;
-      for I in Resolver.Current_Template_Index + 1 .. Positive (Resolver.Template_Refs.Length)
+      for I in Resolver.Current_Template_Index + 1 .. Resolver.Template_Count
       loop
-         Map_Position := Resolver.Template_Refs (I).Block_Map.Find (Name);
+         Map_Position := Resolver.Get_Template (I).Block_Map.Find (Name);
          if Map_Position /= Block_Maps.No_Element then
             Template_Index := I;
             Element_Index := Block_Maps.Element (Map_Position);
@@ -2276,7 +2483,7 @@ package body Jintp is
      (Stmt : Statement;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : in out Resolvers.Variable_Resolver'Class) is
+      Resolver : in out Contexts.Context'Class) is
 
       procedure Replace_Block is
          Current_Element : Template_Element;
@@ -2290,13 +2497,13 @@ package body Jintp is
          if Template_Index = 0 then
             return;
          end if;
-         Resolver.Current_Template_Index := Template_Index;
-         Resolver.Current_Block_Name := Stmt.Block_Name;
+         Resolver.Set_Current_Template_Index (Template_Index);
+         Resolver.Set_Current_Block_Name (Stmt.Block_Name);
          Execute_Block (Element_Index,
-                        Resolver.Template_Refs (Template_Index).Elements,
+                        Resolver.Get_Template (Template_Index).Elements,
                         Out_Buffer,
                         Resolver);
-         Resolver.Current_Template_Index := Old_Template_Index;
+         Resolver.Set_Current_Template_Index (Old_Template_Index);
 
          --  Skip replaced block
          Current := Template_Element_Vectors.Next (Current);
@@ -2339,7 +2546,7 @@ package body Jintp is
                              Out_Buffer,
                              Resolver);
          when Block_Statement =>
-            if Resolver.Template_Refs.Length > 0 then
+            if Resolver.Template_Count > 0 then
                Replace_Block;
             end if;
          when others =>
@@ -2390,7 +2597,7 @@ package body Jintp is
    --                   Values : Dictionary;
    --                   Settings : in out Environment'Class)
    --                   return Unbounded_String is
-   --     Resolver : constant Dictionary_Resolver :=
+   --     Resolver : constant Root_Context :=
    --       (Settings => Settings'Unchecked_Access,
    --        Values => Values,
    --        Template_Ref => Source'Unchecked_Access);
@@ -2400,10 +2607,10 @@ package body Jintp is
    --  end Render;
 
    function Render (Filename : String;
-                    Resolver : in out Resolvers.Variable_Resolver'Class)
+                    Resolver : in out Contexts.Context'Class)
                     return Unbounded_String is
       New_Template : Template_Access :=
-        Resolver.Settings.Cached_Templates.Get (Filename);
+        Resolver.Get_Environment.Cached_Templates.Get (Filename);
       File_Time : Time;
       Must_Free : Boolean := False;
       Inserted : Boolean;
@@ -2413,10 +2620,10 @@ package body Jintp is
          begin
             New_Template := new Template;
             New_Template.Timestamp := File_Time;
-            Get_Template (Filename, New_Template.all, Resolver.Settings.all);
-            Resolver.Settings.Cached_Templates.Put (Filename,
+            Get_Template (Filename, New_Template.all, Resolver.Get_Environment.all);
+            Resolver.Get_Environment.Cached_Templates.Put (Filename,
                                            New_Template,
-                                           Resolver.Settings.Max_Cache_Size,
+                                           Resolver.Get_Environment.Max_Cache_Size,
                                            Inserted);
          exception
             when others =>
@@ -2425,7 +2632,7 @@ package body Jintp is
          end;
          Must_Free := not Inserted;
       end if;
-      Resolver.Template_Refs.Prepend (New_Template);
+      Resolver.Add_Parent_Template (New_Template);
       if Must_Free then
          declare
             Result : constant Unbounded_String
@@ -2445,12 +2652,12 @@ package body Jintp is
                     Values : Dictionary;
                     Settings : in out Environment'Class)
                     return Unbounded_String is
-      Resolver : Dictionary_Resolver :=
+      Resolver : Root_Context :=
         (Settings => Settings'Unchecked_Access,
-         Values => Values,
          Template_Refs => Template_Access_Vectors.Empty_Vector,
-         Current_Template_Index => 1,
-         Current_Block_Name => Null_Unbounded_String);
+         Template_Index => 1,
+         Block_Name => Null_Unbounded_String,
+         Values => Values);
    begin
       return Render (Filename, Resolver);
    end Render;
