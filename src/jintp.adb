@@ -1870,7 +1870,7 @@ package body Jintp is
          raise;
    end Evaluate;
 
-   procedure Process_Block_Elements
+   procedure Process_Control_Block_Elements
      (Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
       Resolver : in out Contexts.Context'class)
@@ -1899,9 +1899,9 @@ package body Jintp is
          end case;
          Next (Current);
       end loop;
-   end Process_Block_Elements;
+   end Process_Control_Block_Elements;
 
-   procedure Skip_Block_Elements
+   procedure Skip_Control_Block_Elements
      (Current : in out Template_Element_Vectors.Cursor;
       Resolver : Contexts.Context'class)
    is
@@ -1931,7 +1931,7 @@ package body Jintp is
          end case;
          Next (Current);
       end loop;
-   end Skip_Block_Elements;
+   end Skip_Control_Block_Elements;
 
    procedure Execute_If
      (Condition : Expression;
@@ -1948,21 +1948,21 @@ package body Jintp is
       end if;
       if Condition_Value.B then
          Next (Current);
-         Process_Block_Elements (Current, Out_Buffer, Resolver);
+         Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
          Element := Template_Element_Vectors.Element (Current);
          if Element.Kind = Statement_Element
            and then Element.Stmt.Kind = Else_Statement
          then
-            Skip_Block_Elements (Current, Resolver);
+            Skip_Control_Block_Elements (Current, Resolver);
          end if;
       else
-         Skip_Block_Elements (Current, Resolver);
+         Skip_Control_Block_Elements (Current, Resolver);
          Element := Template_Element_Vectors.Element (Current);
          if Element.Kind = Statement_Element
            and then Element.Stmt.Kind = Else_Statement
          then
             Next (Current);
-            Process_Block_Elements (Current, Out_Buffer, Resolver);
+            Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
          end if;
       end if;
    end Execute_If;
@@ -2214,21 +2214,21 @@ package body Jintp is
             Value_Resolver.Index := I;
             Current := Start_Cursor;
             Next (Current);
-            Process_Block_Elements (Current, Out_Buffer, Value_Resolver);
+            Process_Control_Block_Elements (Current, Out_Buffer, Value_Resolver);
             I := I + 1;
             Empty_Loop := False;
          end loop;
       end Execute_For_Items;
 
-      procedure Process_Block_Elements
+      procedure Process_Control_Block_Elements
         (Resolver : in out Contexts.Context'class)
       is
       begin
          Current := Start_Cursor;
          Next (Current);
-         Process_Block_Elements (Current, Out_Buffer, Resolver);
+         Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
          Empty_Loop := False;
-      end Process_Block_Elements;
+      end Process_Control_Block_Elements;
 
       use Key_And_Value_Vectors;
 
@@ -2255,7 +2255,7 @@ package body Jintp is
                Value_Resolver.Variable_Value := Value_Assocs (Keys (I));
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
                Value_Resolver.Index := Natural (Value_Resolver.Length) - 1 - I;
-               Process_Block_Elements (Value_Resolver);
+               Process_Control_Block_Elements (Value_Resolver);
             end loop;
          else
             for I in 0 .. Natural (Value_Resolver.Length - 1) loop
@@ -2265,7 +2265,7 @@ package body Jintp is
                Value_Resolver.Variable_Value := Value_Assocs (Keys (I));
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
                Value_Resolver.Index := I;
-               Process_Block_Elements (Value_Resolver);
+               Process_Control_Block_Elements (Value_Resolver);
             end loop;
          end if;
       end Sort_By_Key;
@@ -2295,7 +2295,7 @@ package body Jintp is
                Value_Resolver.Variable_Value := Items (I).Value;
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
                Value_Resolver.Index := Natural (Value_Resolver.Length) - 1 - I;
-               Process_Block_Elements (Value_Resolver);
+               Process_Control_Block_Elements (Value_Resolver);
             end loop;
          else
             for I in 0 .. Natural (Value_Resolver.Length - 1) loop
@@ -2305,7 +2305,7 @@ package body Jintp is
                Value_Resolver.Variable_Value := Items (I).Value;
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
                Value_Resolver.Index := I;
-               Process_Block_Elements (Value_Resolver);
+               Process_Control_Block_Elements (Value_Resolver);
             end loop;
          end if;
       end Sort_By_Value;
@@ -2378,7 +2378,7 @@ package body Jintp is
                   Loop_Resolver.Index := I;
                   Current := Start_Cursor;
                   Next (Current);
-                  Process_Block_Elements (Current, Out_Buffer, Loop_Resolver);
+                  Process_Control_Block_Elements (Current, Out_Buffer, Loop_Resolver);
                   Empty_Loop := False;
                end loop;
             when Dictionary_Expression_Value =>
@@ -2398,7 +2398,7 @@ package body Jintp is
                      Loop_Resolver.Index := I;
                      Current := Start_Cursor;
                      Next (Current);
-                     Process_Block_Elements (Current,
+                     Process_Control_Block_Elements (Current,
                                              Out_Buffer,
                                              Loop_Resolver);
                      Empty_Loop := False;
@@ -2432,9 +2432,9 @@ package body Jintp is
          then
             if Empty_Loop then
                Next (Current);
-               Process_Block_Elements (Current, Out_Buffer, Resolver);
+               Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
             else
-               Skip_Block_Elements (Current, Resolver);
+               Skip_Control_Block_Elements (Current, Resolver);
             end if;
          end if;
       end;
@@ -2449,7 +2449,7 @@ package body Jintp is
    begin
       Get_Template (Filename, Included_Template, Resolver.Get_Environment.all);
       Current := First (Included_Template.Elements);
-      Process_Block_Elements (Current, Out_Buffer, Resolver);
+      Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
    end Execute_Include;
 
    procedure Find_Child_Block
