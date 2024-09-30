@@ -21,6 +21,8 @@ package Jintp is
 
    type List is new Ada.Finalization.Controlled with private;
 
+   Template_Error : exception;
+
    overriding function "=" (Left, Right : Dictionary) return Boolean;
 
    overriding function "=" (Left, Right : List) return Boolean;
@@ -119,12 +121,14 @@ package Jintp is
    procedure Insert (Container : in out Dictionary;
                      Key : Unbounded_String;
                      New_Item : List'Class)
-   with Pre => not Refers (New_Item, Container);
+     with Pre => not Refers (New_Item, Container)
+     or else raise Template_Error with "inserting list would create cycle";
 
    procedure Insert (Container : in out Dictionary;
                      Key : Unbounded_String;
                      New_Item : Dictionary)
-   with Pre => not Refers (New_Item, Container);
+     with Pre => not Refers (New_Item, Container)
+     or else raise Template_Error with "inserting dictionary would create cycle";
 
    procedure Insert (Container : in out Dictionary;
                      Key : Integer;
@@ -145,7 +149,8 @@ package Jintp is
    procedure Insert (Container : in out Dictionary;
                      Key : Integer;
                      New_Item : List'Class)
-   with Pre => not Refers (New_Item, Container);
+     with Pre => not Refers (New_Item, Container)
+     or else raise Template_Error with "inserting list would create cycle";
 
    procedure Insert (Container : in out Dictionary;
                      Key : Integer;
@@ -162,7 +167,8 @@ package Jintp is
 
    procedure Append (Container : in out List;
                      New_Item : Dictionary'Class)
-   with Pre => not Refers (New_Item, Container);
+     with Pre => not Refers (New_Item, Container)
+     or else raise Template_Error with "inserting dictionary would create cycle";
 
    procedure Clear (Container : in out List);
 
@@ -175,8 +181,6 @@ package Jintp is
    procedure Register_Filter (Settings : in out Environment;
                               Filter : Filter_Function;
                               Name : String);
-
-   Template_Error : exception;
 
 private
    type Dictionary_Assocs;
