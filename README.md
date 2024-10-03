@@ -5,7 +5,7 @@ engine for Python.
 
 ## Example
 
-File "main.adb":
+File `main.adb`:
 
     with Ada.Text_IO; use Ada.Text_IO;
     with Jintp; use Jintp;
@@ -22,7 +22,7 @@ File "main.adb":
        Put_Line (Render ("template", D));
     end Main;
 
-File "template":
+File `template`:
 
     <!DOCTYPE html>
     <html>
