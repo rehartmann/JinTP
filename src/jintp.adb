@@ -1965,6 +1965,9 @@ package body Jintp is
             Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
          end if;
       end if;
+   exception
+      when Constraint_Error =>
+         raise Template_Error with "unbalanced 'if'";
    end Execute_If;
 
    type Chained_Context is new Contexts.Context with record
@@ -2438,6 +2441,9 @@ package body Jintp is
             end if;
          end if;
       end;
+   exception
+      when Constraint_Error =>
+         raise Template_Error with "unbalanced 'for'";
    end Execute_For;
 
    procedure Execute_Include (Filename : String;
