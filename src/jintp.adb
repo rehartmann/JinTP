@@ -2472,7 +2472,7 @@ package body Jintp is
          Element_Index := 1; -- not a valid index, only to initialize the field
          return;
       end if;
-      for I in Resolver.Current_Template_Index + 1 .. Resolver.Template_Count
+      for I in reverse Resolver.Current_Template_Index + 1 .. Resolver.Template_Count
       loop
          Map_Position := Resolver.Get_Template (I).Block_Map.Find (Name);
          if Map_Position /= Block_Maps.No_Element then
