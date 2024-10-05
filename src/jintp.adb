@@ -4,6 +4,7 @@ with Ada.Streams.Stream_IO;
 with Ada.Directories;
 with Ada.Calendar;
 with Ada.Unchecked_Deallocation;
+with Ada.Strings.Fixed;
 with Ada.Characters.Handling;
 with Ada.Exceptions;
 with Ada.Text_IO;
@@ -672,6 +673,23 @@ package body Jintp is
       end case;
    end Start_String_Length;
 
+   procedure Raise_With_Location (Message : String;
+                                  Filename : String;
+                                  Line : Positive);
+
+   pragma No_Return (Raise_With_Location);
+
+   procedure Raise_With_Location (Message : String;
+                                  Filename : String;
+                                  Line : Positive) is
+   begin
+      if Ada.Strings.Fixed.Index (Message, "File ") = 0 then
+         raise Template_Error with "File """ & Filename & """, line"
+           & Line'Image & ": " & Message;
+      end if;
+      raise Template_Error with Message;
+   end Raise_With_Location;
+
    procedure Get_Template (Filename : String;
                            Target : out Template;
                            Settings : Environment'Class := Default_Environment) is
@@ -984,9 +1002,10 @@ package body Jintp is
                end case;
             exception
                when E : Template_Error =>
-                  raise Template_Error with "File """ & Filename & """, line"
-                    & Natural'Image (Line_Count + 1) & ": "
-                    & Ada.Exceptions.Exception_Message (E);
+                  Raise_With_Location (Message =>
+                                          Ada.Exceptions.Exception_Message (E),
+                                       Filename => Filename,
+                                       Line => Line_Count + 1);
             end;
          else
             New_Expression := new Expression'
@@ -1403,9 +1422,10 @@ package body Jintp is
             end case;
          exception
             when E : Template_Error =>
-               raise Template_Error with "File """ & Filename
-                 & """, line" & Element.Line'Image & ": "
-                 & Ada.Exceptions.Exception_Message (E);
+                  Raise_With_Location (Message =>
+                                          Ada.Exceptions.Exception_Message (E),
+                                       Filename => Filename,
+                                       Line => Element.Line);
          end;
          Next (Current);
       end loop;
@@ -1413,11 +1433,11 @@ package body Jintp is
    end Render;
 
    procedure Execute_Block (Start_Index : Positive;
-                            Elements : Template_Element_Vectors.Vector;
+                            T : Template;
                             Out_Buffer : in out Unbounded_String;
                             Resolver : in out Contexts.Context'Class) is
       Position : Template_Element_Vectors.Cursor
-        := Elements.To_Cursor (Start_Index + 1);
+        := T.Elements.To_Cursor (Start_Index + 1);
       Current_Element : Template_Element;
    begin
       while Position /= Template_Element_Vectors.No_Element loop
@@ -1438,6 +1458,12 @@ package body Jintp is
          end case;
          Position := Template_Element_Vectors.Next (Position);
       end loop;
+   exception
+      when E : Template_Error =>
+         Raise_With_Location (Message =>
+                                 Ada.Exceptions.Exception_Message (E),
+                              Filename => To_String (T.Filename),
+                              Line => Current_Element.Line);
    end Execute_Block;
 
    function Evaluate_Super (Resolver : in out Contexts.Context'Class)
@@ -1455,7 +1481,7 @@ package body Jintp is
            .Block_Map (Resolver.Current_Block_Name);
       begin
          Execute_Block (Element_Index,
-                        Resolver.Current_Template.Elements,
+                        Resolver.Current_Template.all,
                         Out_Buffer,
                         Resolver);
       exception
@@ -2506,7 +2532,7 @@ package body Jintp is
          Resolver.Set_Current_Template_Index (Template_Index);
          Resolver.Set_Current_Block_Name (Stmt.Block_Name);
          Execute_Block (Element_Index,
-                        Resolver.Get_Template (Template_Index).Elements,
+                        Resolver.Get_Template (Template_Index).all,
                         Out_Buffer,
                         Resolver);
          Resolver.Set_Current_Template_Index (Old_Template_Index);
