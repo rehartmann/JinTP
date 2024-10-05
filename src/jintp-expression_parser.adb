@@ -185,13 +185,9 @@ package body Expression_Parser is
             if Current_Token.Kind = Left_Paren_Token then
                Parse_Named_Arguments (Scanner, Input, Arguments, Settings,
                                       False);
-               if To_String (Name) = "super" then
-                  Result := new Expression'(Kind => Super);
-               else
-                  Result := new Expression'(Kind => Operator,
-                                            Operator_Name => Name,
-                                            Named_Arguments => Arguments);
-               end if;
+               Result := new Expression'(Kind => Operator,
+                                         Operator_Name => Name,
+                                         Named_Arguments => Arguments);
             else
                Result := new Expression'(Kind => Variable,
                                          Variable_Name => Name);

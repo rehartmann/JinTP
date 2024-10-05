@@ -200,7 +200,7 @@ package body Jintp is
 
    use Named_Argument_Vectors;
 
-   type Expression_Kind is (Literal, Operator, Variable, Filter, Test, Super);
+   type Expression_Kind is (Literal, Operator, Variable, Filter, Test);
 
    type Expression_Access_Array is array (Positive range <>)
      of Expression_Access;
@@ -219,8 +219,6 @@ package body Jintp is
          when Operator =>
             Operator_Name : Unbounded_String;
             Named_Arguments : Named_Argument_Vectors.Vector;
-         when Super =>
-            null;
       end case;
    end record;
 
@@ -1199,8 +1197,6 @@ package body Jintp is
             Put (File, Item.Arguments (1).all);
             Ada.Text_IO.Put (File, " is ");
             Ada.Text_IO.Put (To_String (Item.Name));
-         when Super =>
-            Ada.Text_IO.Put (File, " super()");
       end case;
    end Put;
 
@@ -1466,16 +1462,17 @@ package body Jintp is
                               Line => Current_Element.Line);
    end Execute_Block;
 
-   function Evaluate_Super (Resolver : in out Contexts.Context'Class)
+   function Evaluate_Super (Resolver : in out Contexts.Context'Class;
+                            Level : Positive)
                             return Unbounded_String
    is
       Old_Template_Index : constant Positive := Resolver.Current_Template_Index;
       Out_Buffer : Unbounded_String;
    begin
-      if Resolver.Current_Template_Index = 1 then
-         raise Template_Error with "'super' is undefined";
+      if Resolver.Current_Template_Index < Level + 1 then
+         raise Template_Error with "parent block not found";
       end if;
-      Resolver.Set_Current_Template_Index (Resolver.Current_Template_Index - 1);
+      Resolver.Set_Current_Template_Index (Resolver.Current_Template_Index - Level);
       declare
          Element_Index : constant Positive := Resolver.Current_Template
            .Block_Map (Resolver.Current_Block_Name);
@@ -1486,7 +1483,7 @@ package body Jintp is
                         Resolver);
       exception
          when Constraint_Error =>
-            raise Template_Error with "'super' is undefined";
+            raise Template_Error with "parent block not found";
       end;
       Resolver.Set_Current_Template_Index (Old_Template_Index);
       return Out_Buffer;
@@ -1501,7 +1498,34 @@ package body Jintp is
       Right_Arg : Expression_Value;
       Name : constant String := To_String (Source.Operator_Name);
       Macro : Macro_Access;
+      Nested_Expression : Expression_Access;
+      Level : Positive;
    begin
+      if Name = "super" and then Source.Named_Arguments.Length <= 1 then
+         Level := 1;
+         if not Source.Named_Arguments.Is_Empty then
+            Level := 2;
+            Nested_Expression := Source.Named_Arguments.Element (1).Argument;
+            while Nested_Expression.Kind = Operator
+              and then Nested_Expression.Operator_Name = "."
+              and then Nested_Expression.Named_Arguments.Length = 2
+              and then Nested_Expression.Named_Arguments.Element (2).Argument.Kind = Variable
+              and then Nested_Expression.Named_Arguments.Element (2).Argument.Variable_Name = "super"
+            loop
+               Level := Level + 1;
+               Nested_Expression := Nested_Expression.Named_Arguments.Element (1).Argument;
+            end loop;
+            if Nested_Expression.Kind /= Variable then
+               raise Template_Error with "invalid use of 'super'";
+            end if;
+            if Nested_Expression.Variable_Name /= "super" then
+               raise Template_Error with To_String (Nested_Expression.Variable_Name)
+                 & " is undefined";
+            end if;
+         end if;
+         return (Kind => String_Expression_Value,
+                 S => Evaluate_Super (Resolver, Level));
+      end if;
       if Name = "NOT" then
          Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
@@ -1868,9 +1892,6 @@ package body Jintp is
             return Filters.Evaluate_Filter (Source, Resolver);
          when Test =>
             return Evaluate_Test (Source, Resolver);
-         when Super =>
-            return (Kind => String_Expression_Value,
-                    S => Evaluate_Super (Resolver));
       end case;
    end Evaluate;
 
