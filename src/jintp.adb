@@ -941,9 +941,7 @@ package body Jintp is
                                                 Modifier);
                   Current_Line := Current_Line + Line_Count (Last_Pos,
                                                              Input.Pos - 1);
-                  if (Settings.Trim_Blocks and then Modifier /= '+')
-                    or else New_Statement.Kind = Block_Statement
-                    or else New_Statement.Kind = Endblock_Statement
+                  if Settings.Trim_Blocks and then Modifier /= '+'
                   then
                      SkipLinebreak;
                   end if;
@@ -985,8 +983,7 @@ package body Jintp is
                                              Stmt => New_Statement));
                      end if;
                   end if;
-                  if Modifier = '-' or else New_Statement.Kind = Raw_Statement
-                    or else New_Statement.Kind = Block_Statement
+                  if Modifier = '-'
                   then
                      while Input.Pos <= Input.Buffer'Last and then
                        Jintp.Scanner.Is_Whitespace
