@@ -80,6 +80,7 @@ package body Statement_Parser is
       Control_Expression : Expression_Access;
       Variable_Name : Unbounded_String;
       Variable_2_Name : Unbounded_String;
+      Condition : Expression_Access := null;
       Scanner : Scanner_State;
       Current_Token : Token;
       Kind : Token_Kind;
@@ -130,10 +131,17 @@ package body Statement_Parser is
             Next_Token (Scanner, Input, Current_Token, Settings);
             Control_Expression := Jintp.Expression_Parser
               .Parse (Scanner, Input, Settings);
+            Current_Token := Jintp.Scanner.Current_Token (Scanner);
+            if Current_Token.Kind = If_Token then
+               Next_Token (Scanner, Input, Current_Token, Settings);
+               Condition := Jintp.Expression_Parser
+                 .Parse (Scanner, Input, Settings);
+            end if;
             Result := (Kind => For_Statement,
                        For_Variable_1_Name => Variable_Name,
                        For_Variable_2_Name => Variable_2_Name,
-                       For_Expression => Control_Expression);
+                       For_Expression => Control_Expression,
+                       For_Condition => Condition);
          when Endfor_Token =>
             Result := (Kind => Endfor_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);

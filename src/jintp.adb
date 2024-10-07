@@ -120,6 +120,7 @@ package body Jintp is
             For_Variable_1_Name : Unbounded_String;
             For_Variable_2_Name : Unbounded_String;
             For_Expression : Expression_Access;
+            For_Condition : Expression_Access;
          when Include_Statement =>
             Filename : Unbounded_String;
          when Macro_Statement =>
@@ -574,6 +575,7 @@ package body Jintp is
             Delete_Expression (Target.If_Condition);
          when For_Statement =>
             Delete_Expression (Target.For_Expression);
+            Delete_Expression (Target.For_Condition);
          when others =>
             null;
       end case;
@@ -1576,6 +1578,14 @@ package body Jintp is
          return (Kind => Boolean_Expression_Value,
                  B => Left_Arg = Right_Arg);
       end if;
+      if Name = "!=" then
+         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                               Resolver);
+         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                Resolver);
+         return (Kind => Boolean_Expression_Value,
+                 B => Left_Arg /= Right_Arg);
+      end if;
       if Name = "<" then
          Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
                                Resolver);
@@ -1977,20 +1987,28 @@ package body Jintp is
       end loop;
    end Skip_Control_Block_Elements;
 
+   function Evaluate_Boolean (Source : Expression;
+                              Resolver : in out Contexts.Context'class)
+                              return Boolean is
+      Result_Value : constant Expression_Value := Evaluate (Source, Resolver);
+   begin
+      if Result_Value.Kind /= Boolean_Expression_Value then
+         raise Template_Error with "boolean expression expected";
+      end if;
+      return Result_Value.B;
+   end Evaluate_Boolean;
+
    procedure Execute_If
      (Condition : Expression;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
       Resolver : in out Contexts.Context'class)
    is
-      Condition_Value : constant Expression_Value := Evaluate
+      Condition_Value : constant Boolean := Evaluate_Boolean
         (Condition, Resolver);
       Element : Template_Element;
    begin
-      if Condition_Value.Kind /= Boolean_Expression_Value then
-         raise Template_Error with "boolean expression expected";
-      end if;
-      if Condition_Value.B then
+      if Condition_Value then
          Next (Current);
          Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
          Element := Template_Element_Vectors.Element (Current);
@@ -2213,22 +2231,11 @@ package body Jintp is
    package Key_And_Value_Sorting_Case_Insensitive_By_Value is new
      Key_And_Value_Vectors.Generic_Sorting ("<" => Value_Less_Case_Insensitive);
 
-   function Evaluate_Boolean (Source : Expression;
-                              Resolver : in out Contexts.Context'Class)
-                              return Boolean is
-      Value : constant Expression_Value := Evaluate (Source, Resolver);
-   begin
-      if Value.Kind /= Boolean_Expression_Value then
-         raise Template_Error
-           with "argument 'case_sensitive' must be boolean";
-      end if;
-      return Value.B;
-   end Evaluate_Boolean;
-
    procedure Execute_For
      (Collection : Expression;
       Variable_1_Name : Unbounded_String;
       Variable_2_Name : Unbounded_String;
+      Condition : Expression_Access;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
       Resolver : in out Contexts.Context'Class)
@@ -2237,33 +2244,52 @@ package body Jintp is
       Loop_Resolver : aliased Chained_Context;
       Empty_Loop : Boolean := True;
       Value_Resolver : Chained_Context;
-      I : Natural;
+      --  I : Natural;
 
       procedure Execute_For_Items is
          Collection_Value : constant Expression_Value
            := Evaluate (Collection.Named_Arguments (1).Argument.all,
                         Resolver);
       begin
+         Loop_Resolver.Variable_Name := Variable_1_Name;
+         Value_Resolver.Variable_Name := Variable_2_Name;
          if Collection_Value.Kind /= Dictionary_Expression_Value then
             raise Template_Error with "dictionary expected";
          end if;
-         Value_Resolver.Length := Collection_Value.Dictionary_Value.Assocs
-           .Value_Assocs.Length;
-         I := 0;
+         if Condition = null then
+            Value_Resolver.Length := Collection_Value.Dictionary_Value.Assocs
+              .Value_Assocs.Length;
+         else
+            Value_Resolver.Length := 0;
+            for C in Collection_Value.Dictionary_Value.Assocs.Value_Assocs.Iterate
+            loop
+               Loop_Resolver.Variable_Value := Key (C);
+               Value_Resolver.Variable_Value :=
+                 Collection_Value.Dictionary_Value.Assocs.Value_Assocs (C);
+               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
+               if Evaluate_Boolean (Condition.all,
+                                    Value_Resolver)
+               then
+                  Value_Resolver.Length := Value_Resolver.Length + 1;
+               end if;
+            end loop;
+         end if;
+         Value_Resolver.Index := 0;
          for C in Collection_Value.Dictionary_Value.Assocs.Value_Assocs.Iterate
          loop
-            Loop_Resolver.Variable_Name := Variable_1_Name;
             Loop_Resolver.Variable_Value := Key (C);
-            Value_Resolver.Variable_Name := Variable_2_Name;
             Value_Resolver.Variable_Value :=
               Collection_Value.Dictionary_Value.Assocs.Value_Assocs (C);
             Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-            Value_Resolver.Index := I;
             Current := Start_Cursor;
             Next (Current);
-            Process_Control_Block_Elements (Current, Out_Buffer, Value_Resolver);
-            I := I + 1;
-            Empty_Loop := False;
+            if Condition = null or else Evaluate_Boolean (Condition.all,
+                                                          Value_Resolver)
+            then
+               Process_Control_Block_Elements (Current, Out_Buffer, Value_Resolver);
+               Value_Resolver.Index := Value_Resolver.Index + 1;
+               Empty_Loop := False;
+            end if;
          end loop;
       end Execute_For_Items;
 
@@ -2279,9 +2305,11 @@ package body Jintp is
 
       use Key_And_Value_Vectors;
 
-      procedure Sort_By_Key (Value_Assocs : Association_Maps.Map;
-                             Case_Sensitive : Boolean;
-                             Reverse_Sort : Boolean) is
+      procedure Execute_Sorted_By_Key
+        (Value_Assocs : Association_Maps.Map;
+         Case_Sensitive : Boolean;
+         Reverse_Sort : Boolean)
+      is
          Keys : Expression_Value_Vectors.Vector;
          Value_Resolver : Chained_Context;
       begin
@@ -2293,31 +2321,50 @@ package body Jintp is
          else
             Value_Sorting_Case_Insensitive.Sort (Keys);
          end if;
-         Value_Resolver.Length := Length (Keys);
+         Loop_Resolver.Variable_Name := Variable_1_Name;
+         Value_Resolver.Variable_Name := Variable_2_Name;
+         if Condition = null then
+            Value_Resolver.Length := Length (Keys);
+         else
+            Value_Resolver.Length := 0;
+            for C in Value_Assocs.Iterate loop
+               Loop_Resolver.Variable_Value := Key (C);
+               Value_Resolver.Variable_Value := Value_Assocs (Key (C));
+               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
+               if Evaluate_Boolean (Condition.all, Value_Resolver) then
+                  Value_Resolver.Length := Value_Resolver.Length + 1;
+               end if;
+            end loop;
+         end if;
          if Reverse_Sort then
-            for I in reverse 0 .. Natural (Value_Resolver.Length - 1) loop
-               Loop_Resolver.Variable_Name := Variable_1_Name;
+            for I in reverse 0 .. Natural (Length (Keys) - 1) loop
                Loop_Resolver.Variable_Value := Keys (I);
-               Value_Resolver.Variable_Name := Variable_2_Name;
                Value_Resolver.Variable_Value := Value_Assocs (Keys (I));
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
                Value_Resolver.Index := Natural (Value_Resolver.Length) - 1 - I;
-               Process_Control_Block_Elements (Value_Resolver);
+               if Condition = null
+                 or else Evaluate_Boolean (Condition.all, Value_Resolver)
+               then
+                  Process_Control_Block_Elements (Value_Resolver);
+               end if;
             end loop;
          else
-            for I in 0 .. Natural (Value_Resolver.Length - 1) loop
-               Loop_Resolver.Variable_Name := Variable_1_Name;
-               Loop_Resolver.Variable_Value := Keys (I);
-               Value_Resolver.Variable_Name := Variable_2_Name;
-               Value_Resolver.Variable_Value := Value_Assocs (Keys (I));
+            Value_Resolver.Index := 0;
+            for C in Value_Assocs.Iterate loop
+               Loop_Resolver.Variable_Value := Key (C);
+               Value_Resolver.Variable_Value := Value_Assocs (Key (C));
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               Value_Resolver.Index := I;
-               Process_Control_Block_Elements (Value_Resolver);
+               if Condition = null
+                 or else Evaluate_Boolean (Condition.all, Value_Resolver)
+               then
+                  Process_Control_Block_Elements (Value_Resolver);
+                  Value_Resolver.Index := Value_Resolver.Index + 1;
+               end if;
             end loop;
          end if;
-      end Sort_By_Key;
+      end Execute_Sorted_By_Key;
 
-      procedure Sort_By_Value (Value_Assocs : Association_Maps.Map;
+      procedure Execute_Sorted_By_Value (Value_Assocs : Association_Maps.Map;
                                Case_Sensitive : Boolean;
                                Reverse_Sort : Boolean) is
          Items : Key_And_Value_Vectors.Vector;
@@ -2333,29 +2380,43 @@ package body Jintp is
          else
             Key_And_Value_Sorting_Case_Insensitive_By_Value.Sort (Items);
          end if;
-         Value_Resolver.Length := Length (Items);
-         if Reverse_Sort then
-            for I in reverse 0 .. Natural (Value_Resolver.Length - 1) loop
-               Loop_Resolver.Variable_Name := Variable_1_Name;
+         Loop_Resolver.Variable_Name := Variable_1_Name;
+         Value_Resolver.Variable_Name := Variable_2_Name;
+         if Condition = null then
+            Value_Resolver.Length := Length (Items);
+         else
+            Value_Resolver.Length := 0;
+            for I in 0 .. Natural (Length (Items)) - 1 loop
                Loop_Resolver.Variable_Value := Items (I).Key;
-               Value_Resolver.Variable_Name := Variable_2_Name;
+               Value_Resolver.Variable_Value := Items (I).Value;
+               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
+               if Evaluate_Boolean (Condition.all, Value_Resolver) then
+                  Value_Resolver.Length := Value_Resolver.Length + 1;
+               end if;
+            end loop;
+         end if;
+         if Reverse_Sort then
+            for I in reverse 0 .. Natural (Length (Items)) - 1 loop
+               Loop_Resolver.Variable_Value := Items (I).Key;
                Value_Resolver.Variable_Value := Items (I).Value;
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
                Value_Resolver.Index := Natural (Value_Resolver.Length) - 1 - I;
-               Process_Control_Block_Elements (Value_Resolver);
+               if Condition = null
+                 or else Evaluate_Boolean (Condition.all, Value_Resolver)
+               then
+                  Process_Control_Block_Elements (Value_Resolver);
+               end if;
             end loop;
          else
-            for I in 0 .. Natural (Value_Resolver.Length - 1) loop
-               Loop_Resolver.Variable_Name := Variable_1_Name;
+            for I in 0 .. Natural (Length (Items)) - 1 loop
                Loop_Resolver.Variable_Value := Items (I).Key;
-               Value_Resolver.Variable_Name := Variable_2_Name;
                Value_Resolver.Variable_Value := Items (I).Value;
                Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
                Value_Resolver.Index := I;
                Process_Control_Block_Elements (Value_Resolver);
             end loop;
          end if;
-      end Sort_By_Value;
+      end Execute_Sorted_By_Value;
 
       procedure Execute_For_Dictsort is
          Collection_Value : constant Expression_Value
@@ -2399,11 +2460,12 @@ package body Jintp is
                                               Resolver);
          end if;
          if By_Key then
-            Sort_By_Key (Collection_Value.Dictionary_Value.Assocs.Value_Assocs,
-                         Case_Sensitive,
-                         Reverse_Sort);
+            Execute_Sorted_By_Key
+              (Collection_Value.Dictionary_Value.Assocs.Value_Assocs,
+               Case_Sensitive,
+               Reverse_Sort);
          else
-            Sort_By_Value
+            Execute_Sorted_By_Value
               (Collection_Value.Dictionary_Value.Assocs.Value_Assocs,
                Case_Sensitive,
                Reverse_Sort);
@@ -2413,45 +2475,72 @@ package body Jintp is
       procedure Execute_For_Default is
          Collection_Value : Expression_Value := Evaluate (Collection, Resolver);
       begin
+         Loop_Resolver.Variable_Name := Variable_1_Name;
+         Loop_Resolver.Index := 0;
          case Collection_Value.Kind is
             when List_Expression_Value =>
                Init (Collection_Value.List_Value);
-               Loop_Resolver.Length := Length
-                 (Collection_Value.List_Value.Elements.Values);
-               for I in 0 .. Natural (Loop_Resolver.Length - 1) loop
-                  Loop_Resolver.Variable_Name := Variable_1_Name;
-                  Loop_Resolver.Variable_Value :=
-                    Collection_Value.List_Value.Elements.Values (I);
-                  Loop_Resolver.Index := I;
-                  Current := Start_Cursor;
-                  Next (Current);
-                  Process_Control_Block_Elements (Current, Out_Buffer, Loop_Resolver);
-                  Empty_Loop := False;
+               if Condition = null then
+                  Loop_Resolver.Length := Length
+                    (Collection_Value.List_Value.Elements.Values);
+               else
+                  Loop_Resolver.Length := 0;
+                  for E of Collection_Value.List_Value.Elements.Values loop
+                     Loop_Resolver.Variable_Value := E;
+                     if Evaluate_Boolean (Condition.all,
+                                          Loop_Resolver)
+                     then
+                        Loop_Resolver.Length := Loop_Resolver.Length + 1;
+                     end if;
+                  end loop;
+               end if;
+               for E of Collection_Value.List_Value.Elements.Values loop
+                  Loop_Resolver.Variable_Value := E;
+                  if Condition = null or else Evaluate_Boolean (Condition.all,
+                                                                Loop_Resolver)
+                  then
+                     Current := Start_Cursor;
+                     Next (Current);
+                     Process_Control_Block_Elements (Current, Out_Buffer, Loop_Resolver);
+                     Empty_Loop := False;
+                     Loop_Resolver.Index := Loop_Resolver.Index + 1;
+                  end if;
                end loop;
             when Dictionary_Expression_Value =>
                if Variable_2_Name /= Null_Unbounded_String then
                   raise Template_Error
                     with "too many values to unpack (expected 2)";
                end if;
-               declare
-                  I : Natural := 0;
-               begin
+               if Condition = null then
                   Loop_Resolver.Length := Length
                     (Collection_Value.Dictionary_Value.Assocs.Value_Assocs);
+               else
+                  Loop_Resolver.Length := 0;
                   for C in Collection_Value.Dictionary_Value.Assocs.Value_Assocs
                     .Iterate loop
-                     Loop_Resolver.Variable_Name := Variable_1_Name;
                      Loop_Resolver.Variable_Value := Key (C);
-                     Loop_Resolver.Index := I;
+                     if Evaluate_Boolean (Condition.all,
+                                          Loop_Resolver)
+                     then
+                        Loop_Resolver.Length := Loop_Resolver.Length + 1;
+                     end if;
+                  end loop;
+               end if;
+               for C in Collection_Value.Dictionary_Value.Assocs.Value_Assocs
+                 .Iterate loop
+                  Loop_Resolver.Variable_Value := Key (C);
+                  if Condition = null or else Evaluate_Boolean (Condition.all,
+                                                                Loop_Resolver)
+                  then
                      Current := Start_Cursor;
                      Next (Current);
                      Process_Control_Block_Elements (Current,
-                                             Out_Buffer,
-                                             Loop_Resolver);
+                                                     Out_Buffer,
+                                                     Loop_Resolver);
                      Empty_Loop := False;
-                     I := I + 1;
-                  end loop;
-               end;
+                     Loop_Resolver.Index := Loop_Resolver.Index + 1;
+                  end if;
+               end loop;
             when others =>
                raise Template_Error with "list or dictionary expected";
          end case;
@@ -2588,6 +2677,7 @@ package body Jintp is
             Execute_For (Stmt.For_Expression.all,
                          Stmt.For_Variable_1_Name,
                          Stmt.For_Variable_2_Name,
+                         Stmt.For_Condition,
                          Current,
                          Out_Buffer,
                          Resolver);
