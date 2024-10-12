@@ -54,3 +54,19 @@ Output:
       </body>
     </html>
 
+## Statements
+
+The following statements are supported: block, extends, for, if, include, macro.
+
+## Filters
+
+The following built-in filters are supported: batch, capitalize, center, count,
+dictsort, escape, first, float, indent, int, join, last, lower, max, min,
+replace, round, slice, trim, truncate, upper.
+
+Custom filters can be registered using `Register_Filter`.
+
+## Tests
+
+The following tests are supported: boolean, defined, divisibleby, even,
+false, float, in, integer, odd, sequence, string, true, undefined.
