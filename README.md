@@ -31,7 +31,7 @@ File `template`:
       </head>
       <body>
         {% for color in colors %}
-          <p>{{ color }}
+          <p>{{ color }}</p>
         {% endfor %}
       </body>
     </html>
@@ -45,11 +45,11 @@ Output:
       </head>
       <body>
         
-          <p>Green
+          <p>Green</p>
         
-          <p>Red
+          <p>Red</p>
         
-          <p>Blue
+          <p>Blue</p>
         
       </body>
     </html>
