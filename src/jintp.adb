@@ -323,6 +323,9 @@ package body Jintp is
 
    type Environment_Access is access all Environment'Class;
 
+   function To_String (Value : Expression_Value)
+                       return String;
+
    package Contexts is
 
       type Context is abstract tagged limited record
@@ -336,6 +339,10 @@ package body Jintp is
       function Get_Macro (Resolver : Context;
                           Name : Unbounded_String)
                           return Macro_Access is abstract;
+
+      procedure Append (Resolver : Context;
+                        Target : in out Unbounded_String;
+                        Name : Unbounded_String);
 
       function Get_Environment (Resolver : Context)
                                 return Environment_Access is abstract;
@@ -372,6 +379,17 @@ package body Jintp is
 
    end Contexts;
 
+   package body Contexts is
+
+      procedure Append (Resolver : Context;
+                        Target : in out Unbounded_String;
+                        Name : Unbounded_String) is
+      begin
+         Append (Target, To_String (Resolve (Context'Class (Resolver), Name)));
+      end Append;
+
+   end Contexts;
+
    type Root_Context is new Contexts.Context with record
       Settings : Environment_Access;
       Template_Refs : Template_Access_Vectors.Vector;
@@ -385,8 +403,12 @@ package body Jintp is
                                 return Expression_Value;
 
    overriding function Get_Macro (Resolver : Root_Context;
-                       Name : Unbounded_String)
-                       return Macro_Access;
+                                  Name : Unbounded_String)
+                                  return Macro_Access;
+
+   overriding procedure Append (Resolver : Root_Context;
+                                Target : in out Unbounded_String;
+                                Name : Unbounded_String);
 
    overriding function Get_Environment (Resolver : Root_Context)
                                         return Environment_Access;
@@ -429,6 +451,20 @@ package body Jintp is
    end Resolve;
 
    use Macro_Maps;
+
+   overriding procedure Append (Resolver : Root_Context;
+                                Target : in out Unbounded_String;
+                                Name : Unbounded_String) is
+   begin
+      Append (Target,
+              To_String (Association_Maps.Constant_Reference
+                  (Container => Resolver.Values.Assocs.Value_Assocs,
+                   Key  => (Kind => String_Expression_Value,
+                            S => Name))));
+   exception
+      when Constraint_Error =>
+         null;
+   end Append;
 
    overriding function Get_Macro (Resolver : Root_Context;
                        Name : Unbounded_String)
@@ -1065,8 +1101,8 @@ package body Jintp is
    package Long_Float_IO is new
      Ada.Text_IO.Float_IO (Num => Long_Float);
 
-   function To_Unbounded_String (Value : Expression_Value)
-                                 return Unbounded_String is
+   function To_String (Value : Expression_Value)
+                       return String is
       Buffer : Unbounded_String;
       First_Element : Boolean := True;
       Float_Buffer : String (1 .. 32);
@@ -1074,11 +1110,11 @@ package body Jintp is
    begin
       case Value.Kind is
          when String_Expression_Value =>
-            return Value.S;
+            return To_String (Value.S);
          when Boolean_Expression_Value =>
-            return To_Unbounded_String (Value.B'Image);
+            return Value.B'Image;
          when Integer_Expression_Value =>
-            return Trim (To_Unbounded_String (Value.I'Image), Both);
+            return Ada.Strings.Fixed.Trim (Value.I'Image, Both);
          when Float_Expression_Value =>
             Dec_Exponent := Long_Float'Exponent (Value.F) * 3 / 10;
             if Dec_Exponent
@@ -1087,14 +1123,12 @@ package body Jintp is
             then
                Long_Float_IO.Put (Float_Buffer, Value.F,
                                   Long_Float_IO.Default_Aft, 0);
-               return To_Unbounded_String
-                 (Remove_Trailing_Zeroes (Trim (
+               return Remove_Trailing_Zeroes (Trim (
                     To_Unbounded_String (Float_Buffer),
-                  Both)));
+                  Both));
             end if;
             Long_Float_IO.Put (Float_Buffer, Value.F);
-            return Trim (To_Unbounded_String (Float_Buffer),
-                         Both);
+            return Ada.Strings.Fixed.Trim (Float_Buffer, Both);
          when List_Expression_Value =>
             Append (Buffer, '[');
             for V of Value.List_Value.Elements.Values loop
@@ -1103,11 +1137,11 @@ package body Jintp is
                end if;
                First_Element := False;
                Append (Buffer, "'");
-               Append (Buffer, To_Unbounded_String (V));
+               Append (Buffer, To_String (V));
                Append (Buffer, "'");
             end loop;
             Append (Buffer, ']');
-            return Buffer;
+            return To_String (Buffer);
          when Dictionary_Expression_Value =>
             Append (Buffer, '{');
             for C in Value.Dictionary_Value.Assocs.Value_Assocs.Iterate loop
@@ -1116,17 +1150,17 @@ package body Jintp is
                end if;
                First_Element := False;
                Append (Buffer, "'");
-               Append (Buffer, To_Unbounded_String (Key (C)));
+               Append (Buffer, To_String (Key (C)));
                Append (Buffer, "'");
                Append (Buffer, ": ");
                Append (Buffer, "'");
-               Append (Buffer, To_Unbounded_String (Element (C)));
+               Append (Buffer, To_String (Element (C)));
                Append (Buffer, "'");
             end loop;
             Append (Buffer, '}');
-            return Buffer;
+            return To_String (Buffer);
       end case;
-   end To_Unbounded_String;
+   end To_String;
 
    function "<" (Left, Right : Expression_Value) return Boolean is
    begin
@@ -1151,7 +1185,7 @@ package body Jintp is
 
    function Evaluate (Source : Expression;
                       Resolver : in out Contexts.Context'Class)
-                      return Unbounded_String;
+                      return String;
 
    function To_Float (V : Expression_Value) return Long_Float is
    begin
@@ -1178,7 +1212,7 @@ package body Jintp is
    begin
       Ada.Text_IO.Put (File, Item.Kind'Image);
       Ada.Text_IO.Put (File, ": ");
-      Ada.Text_IO.Put (File, To_String (To_Unbounded_String (Item)));
+      Ada.Text_IO.Put (File, To_String (Item));
    end Put;
 
    procedure Put (File : Ada.Text_IO.File_Type;
@@ -1395,6 +1429,20 @@ package body Jintp is
       Out_Buffer : in out Unbounded_String;
       Resolver : in out Contexts.Context'Class);
 
+   procedure Append_Value (Target : in out Unbounded_String;
+                           Source : Expression;
+                           Resolver : in out Contexts.Context'class) is
+   begin
+      case Source.Kind is
+         when Literal =>
+            Append (Target, To_String (Source.Value));
+         when Variable =>
+            Contexts.Append (Resolver, Target, Source.Variable_Name);
+         when others =>
+            Append (Target, Evaluate (Source, Resolver));
+      end case;
+   end Append_Value;
+
    function Render (Filename : String;
                     Resolver : in out Contexts.Context'Class)
                     return Unbounded_String;
@@ -1412,8 +1460,7 @@ package body Jintp is
          begin
             case Element.Kind is
             when Expression_Element =>
-               Append (Out_Buffer,
-                          Evaluate (Element.Expr.all, Resolver));
+               Append_Value (Out_Buffer, Element.Expr.all, Resolver);
             when Statement_Element =>
                case Element.Stmt.Kind is
                when Extends_Statement =>
@@ -1625,15 +1672,15 @@ package body Jintp is
                     B => not (Left_Arg < Right_Arg));
          when Operator_Tilde =>
             declare
-               Left_String : constant Unbounded_String
+               Left_String : constant String
                  := Evaluate (Source.Named_Arguments (1).Argument.all,
                               Resolver);
-               Right_String : constant Unbounded_String
+               Right_String : constant String
                  := Evaluate (Source.Named_Arguments (2).Argument.all,
                               Resolver);
             begin
                return (Kind => String_Expression_Value,
-                       S => Left_String & Right_String);
+                       S => To_Unbounded_String (Left_String & Right_String));
             end;
          when Operator_Plus =>
             return Evaluate_Add (Source, Resolver);
@@ -1899,17 +1946,17 @@ package body Jintp is
 
    function Evaluate (Source : Expression;
                       Resolver : in out Contexts.Context'class)
-                      return Unbounded_String
+                      return String
    is
    begin
-      return To_Unbounded_String (Evaluate (Source, Resolver));
+      return To_String (Evaluate (Source, Resolver));
    exception
       when Template_Error =>
          case Source.Kind is
             when Variable =>
-               return Null_Unbounded_String;
+               return "";
             when Operator_Brackets | Operator_Dot =>
-               return Null_Unbounded_String;
+               return "";
             when others =>
                null;
          end case;
@@ -1929,7 +1976,7 @@ package body Jintp is
             when Expression_Element =>
                Append (Out_Buffer,
                        Evaluate (Current_Element.Expr.all,
-                                 Resolver));
+                         Resolver));
             when Statement_Element =>
                case Current_Element.Stmt.Kind is
                   when Endif_Statement | Elif_Statement | Else_Statement
@@ -1948,10 +1995,8 @@ package body Jintp is
    end Process_Control_Block_Elements;
 
    procedure Skip_Control_Block_Elements
-     (Current : in out Template_Element_Vectors.Cursor;
-      Resolver : Contexts.Context'class)
+     (Current : in out Template_Element_Vectors.Cursor)
    is
-      pragma Unreferenced (Resolver);
       Current_Element : Template_Element;
       Level : Natural := 0;
    begin
@@ -2007,10 +2052,10 @@ package body Jintp is
          if Element.Kind = Statement_Element
            and then Element.Stmt.Kind = Else_Statement
          then
-            Skip_Control_Block_Elements (Current, Resolver);
+            Skip_Control_Block_Elements (Current);
          end if;
       else
-         Skip_Control_Block_Elements (Current, Resolver);
+         Skip_Control_Block_Elements (Current);
          Element := Template_Element_Vectors.Element (Current);
          if Element.Kind = Statement_Element
            and then Element.Stmt.Kind = Else_Statement
@@ -2060,15 +2105,15 @@ package body Jintp is
                                              Item : Template_Access);
 
    overriding function Current_Block_Name (Resolver : Chained_Context)
-                                   return Unbounded_String;
+                                           return Unbounded_String;
 
    overriding procedure Set_Current_Block_Name
      (Resolver : in out Chained_Context;
       Block_Name : Unbounded_String);
 
    overriding function Resolve (Resolver : Chained_Context;
-                     Name : Unbounded_String)
-                     return Expression_Value is
+                                Name : Unbounded_String)
+                                return Expression_Value is
    begin
       if Name = "loop.index" then
          return (Kind => Integer_Expression_Value,
@@ -2236,7 +2281,6 @@ package body Jintp is
       Loop_Resolver : aliased Chained_Context;
       Empty_Loop : Boolean := True;
       Value_Resolver : Chained_Context;
-      --  I : Natural;
 
       procedure Execute_For_Items is
          Collection_Value : constant Expression_Value
@@ -2273,16 +2317,19 @@ package body Jintp is
             Value_Resolver.Variable_Value :=
               Collection_Value.Dictionary_Value.Assocs.Value_Assocs (C);
             Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-            Current := Start_Cursor;
-            Next (Current);
             if Condition = null or else Evaluate_Boolean (Condition.all,
                                                           Value_Resolver)
             then
+               Current := Start_Cursor;
+               Next (Current);
                Process_Control_Block_Elements (Current, Out_Buffer, Value_Resolver);
                Value_Resolver.Index := Value_Resolver.Index + 1;
                Empty_Loop := False;
             end if;
          end loop;
+         if Empty_Loop then
+            Skip_Control_Block_Elements (Current);
+         end if;
       end Execute_For_Items;
 
       procedure Process_Control_Block_Elements
@@ -2338,6 +2385,7 @@ package body Jintp is
                  or else Evaluate_Boolean (Condition.all, Value_Resolver)
                then
                   Process_Control_Block_Elements (Value_Resolver);
+                  Empty_Loop := False;
                end if;
             end loop;
          else
@@ -2350,9 +2398,13 @@ package body Jintp is
                  or else Evaluate_Boolean (Condition.all, Value_Resolver)
                then
                   Process_Control_Block_Elements (Value_Resolver);
+                  Empty_Loop := False;
                   Value_Resolver.Index := Value_Resolver.Index + 1;
                end if;
             end loop;
+         end if;
+         if Empty_Loop then
+            Skip_Control_Block_Elements (Current);
          end if;
       end Execute_Sorted_By_Key;
 
@@ -2498,6 +2550,9 @@ package body Jintp is
                      Loop_Resolver.Index := Loop_Resolver.Index + 1;
                   end if;
                end loop;
+               if Empty_Loop then
+                  Skip_Control_Block_Elements (Current);
+               end if;
             when Dictionary_Expression_Value =>
                if Variable_2_Name /= Null_Unbounded_String then
                   raise Template_Error
@@ -2533,6 +2588,9 @@ package body Jintp is
                      Loop_Resolver.Index := Loop_Resolver.Index + 1;
                   end if;
                end loop;
+               if Empty_Loop then
+                  Skip_Control_Block_Elements (Current);
+               end if;
             when others =>
                raise Template_Error with "list or dictionary expected";
          end case;
@@ -2561,7 +2619,7 @@ package body Jintp is
                Next (Current);
                Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
             else
-               Skip_Control_Block_Elements (Current, Resolver);
+               Skip_Control_Block_Elements (Current);
             end if;
          end if;
       end;

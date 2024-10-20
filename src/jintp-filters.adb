@@ -15,20 +15,20 @@ package body Filters is
        (Ada.Strings.Maps.Character_Sequence'
           (' ', ASCII.LF, ASCII.HT, ASCII.VT, ASCII.FF, ASCII.CR));
 
-   function Html_Escape (Source : Unbounded_String) return Unbounded_String
+   function Html_Escape (Source : String) return Unbounded_String
      with Post =>
        Index (Html_Escape'Result, Ada.Strings.Maps.To_Set ("<>'""")) = 0
    is
       Result : Unbounded_String := Null_Unbounded_String;
    begin
-      for I in 1 .. Length (Source) loop
-         case Element (Source, I) is
+      for I in Source'Range loop
+         case Source (I) is
             when '&' => Append (Result, "&amp;");
             when '<' => Append (Result, "&lt;");
             when '>' => Append (Result, "&gt;");
             when '"' => Append (Result, "&#34;");
             when ''' => Append (Result, "&#39;");
-            when others => Append (Result, Element (Source, I));
+            when others => Append (Result, Source (I));
          end case;
       end loop;
       return Result;
@@ -223,24 +223,23 @@ package body Filters is
       end Evaluate_Slice;
 
       function Evaluate_Center return Expression_Value is
-         Value : Unbounded_String;
          Width_Value : Expression_Value;
          Left_Padding, Right_Padding : Natural;
+         Value : constant String := Evaluate (Source.Arguments (1).all,
+                                              Resolver);
       begin
-         Value := Evaluate (Source.Arguments (1).all,
-                            Resolver);
          Width_Value := Evaluate (Source.Arguments (2).all,
                                   Resolver);
          if Width_Value.Kind /= Integer_Expression_Value then
             raise Template_Error with "argument must be integer";
          end if;
-         if Length (Value) >= Width_Value.I then
+         if Value'Length >= Width_Value.I then
             return (Kind => String_Expression_Value,
-                    S => Value);
+                    S => To_Unbounded_String (Value));
          end if;
-         Left_Padding := (Width_Value.I - Length (Value)) / 2;
+         Left_Padding := (Width_Value.I - Value'Length) / 2;
          Right_Padding := Left_Padding
-           + (if 2 * Left_Padding + Length (Value) < Width_Value.I
+           + (if 2 * Left_Padding + Value'Length < Width_Value.I
               then 1 else 0);
          return  (Kind => String_Expression_Value,
                   S => (Left_Padding * ' ') & Value
@@ -317,7 +316,7 @@ package body Filters is
       is
          Buffer : Unbounded_String := Null_Unbounded_String;
          First_Element : Boolean := True;
-         Separator : constant Unbounded_String
+         Separator : constant String
            := Evaluate (Source.Arguments (2).all, Resolver);
       begin
          case Source_Value.Kind is
@@ -327,7 +326,7 @@ package body Filters is
                      Append (Buffer, Separator);
                   end if;
                   First_Element := False;
-                  Append (Buffer, To_Unbounded_String (V));
+                  Append (Buffer, To_String (V));
                end loop;
                return (Kind => String_Expression_Value,
                        S => Buffer);
@@ -689,7 +688,7 @@ package body Filters is
       end if;
       if Source.Name = "capitalize" then
          declare
-            Source_String : constant Unbounded_String
+            Source_String : constant String
               := Evaluate (Source.Arguments (1).all,
                            Resolver);
          begin
@@ -699,39 +698,41 @@ package body Filters is
             end if;
             return (Kind => String_Expression_Value,
                     S => Ada.Characters.Handling.To_Upper
-                      (Element (Source_String, 1))
+                      (Source_String
+                         (Source_String'First .. Source_String'First))
                     & To_Unbounded_String (
-                      Ada.Characters.Handling.To_Lower (Slice (Source_String,
-                        2, Length (Source_String)))));
+                      Ada.Characters.Handling.To_Lower
+                        (Source_String (Source_String'First + 1
+                         .. Source_String'Last))));
          end;
       end if;
       if Source.Name = "upper" then
          declare
-            Source_String : constant Unbounded_String
+            Source_String : constant String
               := Evaluate (Source.Arguments (1).all,
                            Resolver);
          begin
             return (Kind => String_Expression_Value,
                     S => To_Unbounded_String (Ada.Characters.Handling.To_Upper
-                      (To_String (Source_String))));
+                      (Source_String)));
          end;
       end if;
       if Source.Name = "lower" then
          declare
-            Source_String : constant Unbounded_String
+            Source_String : constant String
               := Evaluate (Source.Arguments (1).all,
                            Resolver);
          begin
             return (Kind => String_Expression_Value,
                     S => To_Unbounded_String (Ada.Characters.Handling.To_Lower
-                      (To_String (Source_String))));
+                      (Source_String)));
          end;
       end if;
       Source_Value := Evaluate (Source.Arguments (1).all,
                                 Resolver);
       if Source.Name = "e" or else Source.Name = "escape" then
          declare
-            Source_String : constant Unbounded_String :=
+            Source_String : constant String :=
               Evaluate (Source.Arguments (1).all,
                         Resolver);
          begin
@@ -819,7 +820,7 @@ package body Filters is
          I : Natural;
       begin
          Custom_Filter := Resolver.Get_Environment.Filters (Source.Name);
-         Args (1) := To_Unbounded_String (Source_Value);
+         Args (1) := To_Unbounded_String (To_String (Source_Value));
          I := 2;
          while Source.Arguments (I) /= null loop
             Args (I) := To_Unbounded_String
