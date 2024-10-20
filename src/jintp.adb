@@ -201,7 +201,14 @@ package body Jintp is
 
    use Named_Argument_Vectors;
 
-   type Expression_Kind is (Literal, Operator, Variable, Filter, Test);
+   type Expression_Kind is (Literal, Operator_Super, Operator_Not, Operator_Or,
+                            Operator_And, Operator_Eq, Operator_Neq,
+                            Operator_Lt, Operator_Le, Operator_Gt, Operator_Ge,
+                            Operator_Tilde, Operator_Plus, Operator_Minus,
+                            Operator_Mul, Operator_Div, Operator_Integer_Div,
+                            Operator_Power, Operator_Dot, Operator_Brackets,
+                            Operator_Items, Operator_Macro,
+                            Variable, Filter, Test);
 
    type Expression_Access_Array is array (Positive range <>)
      of Expression_Access;
@@ -217,9 +224,11 @@ package body Jintp is
          when Filter | Test =>
             Name : Unbounded_String;
             Arguments : Expression_Access_Array (1 .. Argument_Capacity);
-         when Operator =>
-            Operator_Name : Unbounded_String;
+         when Operator_Super .. Operator_Items =>
             Named_Arguments : Named_Argument_Vectors.Vector;
+         when Operator_Macro =>
+            Macro_Name : Unbounded_String;
+            Macro_Arguments : Named_Argument_Vectors.Vector;
       end case;
    end record;
 
@@ -237,8 +246,12 @@ package body Jintp is
             loop
                Delete_Expression (Expr.Arguments (I));
             end loop;
-         when Operator =>
+         when Operator_Super .. Operator_Items =>
             for E of Expr.Named_Arguments loop
+               Delete_Expression (E.Argument);
+            end loop;
+         when Operator_Macro =>
+            for E of Expr.Macro_Arguments loop
                Delete_Expression (E.Argument);
             end loop;
          when others =>
@@ -1178,7 +1191,7 @@ package body Jintp is
             Put (File, Item.Value);
          when Variable =>
             Ada.Text_IO.Put (File, To_String (Item.Variable_Name));
-         when Operator =>
+         when Operator_Super .. Operator_Macro =>
             Ada.Text_IO.Put (File, To_String (Item.Name));
             Ada.Text_IO.Put (File, '(');
             for I in Item.Arguments'First .. Item.Arguments'Last loop
@@ -1492,269 +1505,251 @@ package body Jintp is
      (Source : Expression;
       Resolver : in out Contexts.Context'Class)
       return Expression_Value
+     with Pre => Source.Kind in Operator_Super .. Operator_Macro
    is
       Left_Arg : Expression_Value;
       Right_Arg : Expression_Value;
-      Name : constant String := To_String (Source.Operator_Name);
       Macro : Macro_Access;
       Nested_Expression : Expression_Access;
       Level : Positive;
    begin
-      if Name = "super" and then Source.Named_Arguments.Length <= 1 then
-         Level := 1;
-         if not Source.Named_Arguments.Is_Empty then
-            Level := 2;
-            Nested_Expression := Source.Named_Arguments.Element (1).Argument;
-            while Nested_Expression.Kind = Operator
-              and then Nested_Expression.Operator_Name = "."
-              and then Nested_Expression.Named_Arguments.Length = 2
-              and then Nested_Expression.Named_Arguments.Element (2).Argument.Kind = Variable
-              and then Nested_Expression.Named_Arguments.Element (2).Argument.Variable_Name = "super"
-            loop
-               Level := Level + 1;
-               Nested_Expression := Nested_Expression.Named_Arguments.Element (1).Argument;
-            end loop;
-            if Nested_Expression.Kind /= Variable then
-               raise Template_Error with "invalid use of 'super'";
-            end if;
-            if Nested_Expression.Variable_Name /= "super" then
-               raise Template_Error with To_String (Nested_Expression.Variable_Name)
-                 & " is undefined";
-            end if;
-         end if;
-         return (Kind => String_Expression_Value,
-                 S => Evaluate_Super (Resolver, Level));
-      end if;
-      if Name = "NOT" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         if Left_Arg.Kind /= Boolean_Expression_Value then
-            raise Template_Error with "boolean expression expected";
-         end if;
-         return (Kind => Boolean_Expression_Value,
-                 B => not Left_Arg.B);
-      end if;
-      if Name = "OR" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         if Left_Arg.Kind /= Boolean_Expression_Value then
-            raise Template_Error with "boolean expression expected";
-         end if;
-         if Left_Arg.B then
-            return (Kind => Boolean_Expression_Value,
-                    B => True);
-         end if;
-         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
-                                Resolver);
-         if Right_Arg.Kind /= Boolean_Expression_Value then
-            raise Template_Error with "boolean expression expected";
-         end if;
-         return (Kind => Boolean_Expression_Value,
-                 B => Right_Arg.B);
-      end if;
-      if Name = "AND" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         if Left_Arg.Kind /= Boolean_Expression_Value then
-            raise Template_Error with "boolean expression expected";
-         end if;
-         if not Left_Arg.B then
-            return (Kind => Boolean_Expression_Value,
-                    B => False);
-         end if;
-         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
-                                Resolver);
-         if Right_Arg.Kind /= Boolean_Expression_Value then
-            raise Template_Error with "boolean expression expected";
-         end if;
-         return (Kind => Boolean_Expression_Value,
-                 B => Right_Arg.B);
-      end if;
-      if Name = "==" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
-                                Resolver);
-         return (Kind => Boolean_Expression_Value,
-                 B => Left_Arg = Right_Arg);
-      end if;
-      if Name = "!=" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
-                                Resolver);
-         return (Kind => Boolean_Expression_Value,
-                 B => Left_Arg /= Right_Arg);
-      end if;
-      if Name = "<" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
-                                Resolver);
-         return (Kind => Boolean_Expression_Value,
-                 B => Left_Arg < Right_Arg);
-      end if;
-      if Name = "<=" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
-                                Resolver);
-         return (Kind => Boolean_Expression_Value,
-                 B => not (Right_Arg < Left_Arg));
-      end if;
-      if Name = ">" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
-                                Resolver);
-         return (Kind => Boolean_Expression_Value,
-                 B => Right_Arg < Left_Arg);
-      end if;
-      if Name = ">=" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
-                                Resolver);
-         return (Kind => Boolean_Expression_Value,
-                 B => not (Left_Arg < Right_Arg));
-      end if;
-      if Name = "~" then
-         declare
-            Left_String : constant Unbounded_String
-              := Evaluate (Source.Named_Arguments (1).Argument.all,
-                           Resolver);
-            Right_String : constant Unbounded_String
-              := Evaluate (Source.Named_Arguments (2).Argument.all,
-                           Resolver);
-         begin
-            return (Kind => String_Expression_Value,
-                    S => Left_String & Right_String);
-         end;
-      end if;
-      if Name = "+" then
-         return Evaluate_Add (Source, Resolver);
-      end if;
-      if Name = "-" then
-         return Evaluate_Subtract (Source, Resolver);
-      end if;
-      if Name = "*" then
-         return Evaluate_Mul (Source, Resolver);
-      end if;
-      if Name = "/" then
-         return Evaluate_Div (Source, Resolver);
-      end if;
-      if Name = "//" then
-         return Evaluate_Integer_Div (Source, Resolver);
-      end if;
-      if Name = "**" then
-         return Evaluate_Power (Source, Resolver);
-      end if;
-      if Name = "." then
-         if Source.Named_Arguments (1).Argument.Kind = Variable
-           and then Source.Named_Arguments (1).Argument.Variable_Name = "loop"
-           and then Source.Named_Arguments (1).Argument.Kind = Variable
-         then
-            return Resolver.Resolve
-              ("loop." & Source.Named_Arguments (2).Argument.Variable_Name);
-         end if;
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         if Left_Arg.Kind /= Dictionary_Expression_Value then
-            raise Template_Error with "dictionary expected before '.'";
-         end if;
-         if Source.Named_Arguments (2).Argument.Kind /= Variable then
-            raise Template_Error with "identifier expected after '.'";
-         end if;
-         begin
-            return Element (Left_Arg.Dictionary_Value,
-                            Source.Named_Arguments (2).Argument.Variable_Name);
-         exception
-            when Constraint_Error =>
-               raise Template_Error with "dictionary has no attribute '"
-                 & To_String (Source.Named_Arguments (2).Argument.Variable_Name)
-                 & ''';
-         end;
-      end if;
-      if Name = "[]" then
-         Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
-                               Resolver);
-         Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
-                                Resolver);
-         if Left_Arg.Kind = Dictionary_Expression_Value then
-            if Right_Arg.Kind /= String_Expression_Value then
-               raise Template_Error with "dictionary index must be a string";
-            end if;
-            begin
-               return Left_Arg.Dictionary_Value.Assocs.Value_Assocs
-                 (Right_Arg);
-            exception
-            when Constraint_Error =>
-               raise Template_Error with "dictionary has no attribute '"
-                 & To_String (Right_Arg.S) & ''';
-            end;
-         elsif Left_Arg.Kind = List_Expression_Value then
-            if Right_Arg.Kind /= Integer_Expression_Value then
-               raise Template_Error with "list index must be integer";
-            end if;
-            begin
-               return Left_Arg.List_Value.Elements.Values (Right_Arg.I);
-            exception
-               when Constraint_Error =>
-                  raise Template_Error with "list has no element "
-                    & Right_Arg.I'Image;
-            end;
-         else
-            raise Template_Error with "dictionary or list expected before '['";
-         end if;
-      end if;
-      if Name = "items" then
-         raise Template_Error with "unsupported usage of 'items'";
-      end if;
-
-      Macro := Resolver.Get_Macro (Source.Operator_Name);
-      if Macro /= null then
-         declare
-            Macro_Resolver : Root_Context;
-            Position : Named_Argument_Vectors.Cursor;
-         begin
-            for I in 1 .. Macro.Parameters.Length loop
-               if I <= Source.Named_Arguments.Length
-                 and then Source.Named_Arguments (Positive (I)).Name
-                   = Null_Unbounded_String
-               then
-                  --  Positional parameter
-                  Macro_Resolver.Values.Insert
-                    (Macro.Parameters (Positive (I)).Name,
-                     Evaluate
-                       (Source.Named_Arguments (Positive (I)).Argument.all,
-                        Resolver));
-               else
-                  Position := Find_Named_Argument
-                    (Source.Named_Arguments,
-                     Macro.Parameters (Positive (I)).Name);
-                  if Position /= Named_Argument_Vectors.No_Element then
-                     --  Named parameter
-                     Macro_Resolver.Values.Insert
-                       (Macro.Parameters (Positive (I)).Name,
-                        Evaluate
-                          (Named_Argument_Vectors.Element (Position).Argument.all,
-                           Resolver));
-                  elsif Macro.Parameters (Positive (I)).Has_Default_Value then
-                     --  Default parameter value
-                     Init (Macro_Resolver.Values);
-                     Include (Macro_Resolver.Values.Assocs.Value_Assocs,
-                              (Kind => String_Expression_Value,
-                               S => Macro.Parameters (Positive (I)).Name),
-                              Macro.Parameters (Positive (I)).Default_Value);
+      case Source.Kind is
+         when Operator_Super =>
+            if Source.Named_Arguments.Length <= 1 then
+               Level := 1;
+               if not Source.Named_Arguments.Is_Empty then
+                  Level := 2;
+                  Nested_Expression := Source.Named_Arguments.Element (1).Argument;
+                  while Nested_Expression.Kind = Operator_Dot
+                    and then Nested_Expression.Named_Arguments.Length = 2
+                    and then Nested_Expression.Named_Arguments.Element (2).Argument.Kind = Variable
+                    and then Nested_Expression.Named_Arguments.Element (2).Argument.Variable_Name = "super"
+                  loop
+                     Level := Level + 1;
+                     Nested_Expression := Nested_Expression.Named_Arguments.Element (1).Argument;
+                  end loop;
+                  if Nested_Expression.Kind /= Variable then
+                     raise Template_Error with "invalid use of 'super'";
+                  end if;
+                  if Nested_Expression.Variable_Name /= "super" then
+                     raise Template_Error with To_String (Nested_Expression.Variable_Name)
+                       & " is undefined";
                   end if;
                end if;
-            end loop;
-            return (Kind => String_Expression_Value,
-                    S => Render (Macro.Elements, "", Macro_Resolver));
-         end;
-      end if;
-
-      raise Template_Error with "unknown operator " & To_String (Source.Operator_Name);
+               return (Kind => String_Expression_Value,
+                       S => Evaluate_Super (Resolver, Level));
+            end if;
+         when Operator_Not =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            if Left_Arg.Kind /= Boolean_Expression_Value then
+               raise Template_Error with "boolean expression expected";
+            end if;
+            return (Kind => Boolean_Expression_Value,
+                    B => not Left_Arg.B);
+         when Operator_Or =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            if Left_Arg.Kind /= Boolean_Expression_Value then
+               raise Template_Error with "boolean expression expected";
+            end if;
+            if Left_Arg.B then
+               return (Kind => Boolean_Expression_Value,
+                       B => True);
+            end if;
+            Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                   Resolver);
+            if Right_Arg.Kind /= Boolean_Expression_Value then
+               raise Template_Error with "boolean expression expected";
+            end if;
+            return (Kind => Boolean_Expression_Value,
+                    B => Right_Arg.B);
+         when Operator_And =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            if Left_Arg.Kind /= Boolean_Expression_Value then
+               raise Template_Error with "boolean expression expected";
+            end if;
+            if not Left_Arg.B then
+               return (Kind => Boolean_Expression_Value,
+                       B => False);
+            end if;
+            Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                   Resolver);
+            if Right_Arg.Kind /= Boolean_Expression_Value then
+               raise Template_Error with "boolean expression expected";
+            end if;
+            return (Kind => Boolean_Expression_Value,
+                    B => Right_Arg.B);
+         when Operator_Eq =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                   Resolver);
+            return (Kind => Boolean_Expression_Value,
+                    B => Left_Arg = Right_Arg);
+         when Operator_Neq =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                   Resolver);
+            return (Kind => Boolean_Expression_Value,
+                    B => Left_Arg /= Right_Arg);
+         when Operator_Lt =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                   Resolver);
+            return (Kind => Boolean_Expression_Value,
+                    B => Left_Arg < Right_Arg);
+         when Operator_Ge =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                   Resolver);
+            return (Kind => Boolean_Expression_Value,
+                    B => not (Right_Arg < Left_Arg));
+         when Operator_Gt =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                   Resolver);
+            return (Kind => Boolean_Expression_Value,
+                    B => Right_Arg < Left_Arg);
+         when Operator_Le =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                   Resolver);
+            return (Kind => Boolean_Expression_Value,
+                    B => not (Left_Arg < Right_Arg));
+         when Operator_Tilde =>
+            declare
+               Left_String : constant Unbounded_String
+                 := Evaluate (Source.Named_Arguments (1).Argument.all,
+                              Resolver);
+               Right_String : constant Unbounded_String
+                 := Evaluate (Source.Named_Arguments (2).Argument.all,
+                              Resolver);
+            begin
+               return (Kind => String_Expression_Value,
+                       S => Left_String & Right_String);
+            end;
+         when Operator_Plus =>
+            return Evaluate_Add (Source, Resolver);
+         when Operator_Minus =>
+            return Evaluate_Subtract (Source, Resolver);
+         when Operator_Mul =>
+            return Evaluate_Mul (Source, Resolver);
+         when Operator_Div =>
+            return Evaluate_Div (Source, Resolver);
+         when Operator_Integer_Div =>
+            return Evaluate_Integer_Div (Source, Resolver);
+         when Operator_Power =>
+            return Evaluate_Power (Source, Resolver);
+         when Operator_Dot =>
+            if Source.Named_Arguments (1).Argument.Kind = Variable
+              and then Source.Named_Arguments (1).Argument.Variable_Name = "loop"
+              and then Source.Named_Arguments (1).Argument.Kind = Variable
+            then
+               return Resolver.Resolve
+                 ("loop." & Source.Named_Arguments (2).Argument.Variable_Name);
+            end if;
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            if Left_Arg.Kind /= Dictionary_Expression_Value then
+               raise Template_Error with "dictionary expected before '.'";
+            end if;
+            if Source.Named_Arguments (2).Argument.Kind /= Variable then
+               raise Template_Error with "identifier expected after '.'";
+            end if;
+            begin
+               return Element (Left_Arg.Dictionary_Value,
+                               Source.Named_Arguments (2).Argument.Variable_Name);
+            exception
+               when Constraint_Error =>
+                  raise Template_Error with "dictionary has no attribute '"
+                    & To_String (Source.Named_Arguments (2).Argument.Variable_Name)
+                    & ''';
+            end;
+         when Operator_Brackets =>
+            Left_Arg := Evaluate (Source.Named_Arguments (1).Argument.all,
+                                  Resolver);
+            Right_Arg := Evaluate (Source.Named_Arguments (2).Argument.all,
+                                   Resolver);
+            if Left_Arg.Kind = Dictionary_Expression_Value then
+               if Right_Arg.Kind /= String_Expression_Value then
+                  raise Template_Error with "dictionary index must be a string";
+               end if;
+               begin
+                  return Left_Arg.Dictionary_Value.Assocs.Value_Assocs
+                    (Right_Arg);
+               exception
+                  when Constraint_Error =>
+                     raise Template_Error with "dictionary has no attribute '"
+                       & To_String (Right_Arg.S) & ''';
+               end;
+            elsif Left_Arg.Kind = List_Expression_Value then
+               if Right_Arg.Kind /= Integer_Expression_Value then
+                  raise Template_Error with "list index must be integer";
+               end if;
+               begin
+                  return Left_Arg.List_Value.Elements.Values (Right_Arg.I);
+               exception
+                  when Constraint_Error =>
+                     raise Template_Error with "list has no element "
+                       & Right_Arg.I'Image;
+               end;
+            else
+               raise Template_Error with "dictionary or list expected before '['";
+            end if;
+         when Operator_Macro =>
+            Macro := Resolver.Get_Macro (Source.Macro_Name);
+            if Macro /= null then
+               declare
+                  Macro_Resolver : Root_Context;
+                  Position : Named_Argument_Vectors.Cursor;
+               begin
+                  for I in 1 .. Macro.Parameters.Length loop
+                     if I <= Source.Macro_Arguments.Length
+                       and then Source.Macro_Arguments (Positive (I)).Name
+                         = Null_Unbounded_String
+                     then
+                        --  Positional parameter
+                        Macro_Resolver.Values.Insert
+                          (Macro.Parameters (Positive (I)).Name,
+                           Evaluate
+                             (Source.Macro_Arguments (Positive (I)).Argument.all,
+                              Resolver));
+                     else
+                        Position := Find_Named_Argument
+                          (Source.Macro_Arguments,
+                           Macro.Parameters (Positive (I)).Name);
+                        if Position /= Named_Argument_Vectors.No_Element then
+                           --  Named parameter
+                           Macro_Resolver.Values.Insert
+                             (Macro.Parameters (Positive (I)).Name,
+                              Evaluate
+                                (Named_Argument_Vectors.Element (Position).Argument.all,
+                                 Resolver));
+                        elsif Macro.Parameters (Positive (I)).Has_Default_Value then
+                           --  Default parameter value
+                           Init (Macro_Resolver.Values);
+                           Include (Macro_Resolver.Values.Assocs.Value_Assocs,
+                                    (Kind => String_Expression_Value,
+                                     S => Macro.Parameters (Positive (I)).Name),
+                                    Macro.Parameters (Positive (I)).Default_Value);
+                        end if;
+                     end if;
+                  end loop;
+                  return (Kind => String_Expression_Value,
+                          S => Render (Macro.Elements, "", Macro_Resolver));
+               end;
+            end if;
+         when others =>
+            null;
+      end case;
+      raise Template_Error with "invalid usage of " & Source.Kind'Image;
    end Evaluate_Operator;
 
    function Evaluate_Test
@@ -1893,7 +1888,7 @@ package body Jintp is
             return Source.Value;
          when Variable =>
             return Contexts.Resolve (Resolver, Source.Variable_Name);
-         when Operator =>
+         when Operator_Super .. Operator_Macro =>
             return Evaluate_Operator (Source, Resolver);
          when Filter =>
             return Filters.Evaluate_Filter (Source, Resolver);
@@ -1904,7 +1899,8 @@ package body Jintp is
 
    function Evaluate (Source : Expression;
                       Resolver : in out Contexts.Context'class)
-                      return Unbounded_String is
+                      return Unbounded_String
+   is
    begin
       return To_Unbounded_String (Evaluate (Source, Resolver));
    exception
@@ -1912,12 +1908,8 @@ package body Jintp is
          case Source.Kind is
             when Variable =>
                return Null_Unbounded_String;
-            when Operator =>
-               if To_String (Source.Operator_Name) = "[]"
-                 or else To_String (Source.Operator_Name) = "."
-               then
-                  return Null_Unbounded_String;
-               end if;
+            when Operator_Brackets | Operator_Dot =>
+               return Null_Unbounded_String;
             when others =>
                null;
          end case;
@@ -2548,8 +2540,7 @@ package body Jintp is
 
    begin
       Loop_Resolver.Parent_Resolver := Resolver'Unchecked_Access;
-      if Collection.Kind = Operator
-        and then Collection.Operator_Name = "items"
+      if Collection.Kind = Operator_Items
       then
          Execute_For_Items;
       elsif Collection.Kind = Filter
@@ -2732,19 +2723,6 @@ package body Jintp is
       end if;
       return Left.Elements.Values = Right.Elements.Values;
    end "=";
-
-   --  function Render (Source : in out Template'Class;
-   --                   Values : Dictionary;
-   --                   Settings : in out Environment'Class)
-   --                   return Unbounded_String is
-   --     Resolver : constant Root_Context :=
-   --       (Settings => Settings'Unchecked_Access,
-   --        Values => Values,
-   --        Template_Ref => Source'Unchecked_Access);
-   --  begin
-   --     return Render (Source.Elements, To_String (Source.Filename),
-   --                    Resolver);
-   --  end Render;
 
    function Render (Filename : String;
                     Resolver : in out Contexts.Context'Class)
