@@ -69,8 +69,8 @@ package Jintp is
                     return Boolean;
 
    function Refers (Source : List'Class;
-                   Target : List)
-                   return Boolean;
+                    Target : List)
+                    return Boolean;
 
    procedure Insert (Container : in out Dictionary;
                      Key : String;
@@ -155,7 +155,8 @@ package Jintp is
    procedure Insert (Container : in out Dictionary;
                      Key : Integer;
                      New_Item : Dictionary'Class)
-   with Pre => not Refers (New_Item, Container);
+     with Pre => not Refers (New_Item, Container)
+     or else raise Template_Error with "inserting dictionary would create cycle";
 
    procedure Clear (Container : in out Dictionary);
 
