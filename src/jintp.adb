@@ -354,21 +354,17 @@ package body Jintp is
                                  return Natural is abstract;
 
       procedure Set_Current_Template_Index (Resolver : in out Context;
-                                            Index : Positive)
-      is abstract;
+                                            Index : Positive) is abstract;
 
       function Template_Count (Resolver : Context)
-                               return Natural
-                               is abstract;
+                               return Natural is abstract;
 
       function Get_Template (Resolver : Context;
                              Index : Positive)
-                             return Template_Access
-                             is abstract;
+                             return Template_Access is abstract;
 
       procedure Add_Parent_Template (Resolver : in out Context;
-                                    Item : Template_Access)
-                                    is abstract;
+                                    Item : Template_Access) is abstract;
 
       function Current_Block_Name (Resolver : Context)
                                    return Unbounded_String is abstract;
@@ -386,6 +382,9 @@ package body Jintp is
                         Name : Unbounded_String) is
       begin
          Append (Target, To_String (Resolve (Context'Class (Resolver), Name)));
+      exception
+         when Template_Error =>
+            null;
       end Append;
 
    end Contexts;
@@ -1431,13 +1430,27 @@ package body Jintp is
 
    procedure Append_Value (Target : in out Unbounded_String;
                            Source : Expression;
-                           Resolver : in out Contexts.Context'class) is
+                           Resolver : in out Contexts.Context'Class) is
    begin
       case Source.Kind is
          when Literal =>
             Append (Target, To_String (Source.Value));
          when Variable =>
             Contexts.Append (Resolver, Target, Source.Variable_Name);
+         when Operator_Dot =>
+            if Length (Source.Named_Arguments) = 2
+              and then Source.Named_Arguments (1).Argument.Kind = Variable
+              and then Source.Named_Arguments (1).Argument.Variable_Name = "loop"
+              and then Source.Named_Arguments (2).Argument.Kind = Variable
+            then
+               Contexts.Append
+                 (Resolver,
+                  Target,
+                  To_Unbounded_String ("loop.")
+                  & Source.Named_Arguments (2).Argument.Variable_Name);
+            else
+               Append (Target, Evaluate (Source, Resolver));
+            end if;
          when others =>
             Append (Target, Evaluate (Source, Resolver));
       end case;
@@ -1974,9 +1987,9 @@ package body Jintp is
          Current_Element := Template_Element_Vectors.Element (Current);
          case Current_Element.Kind is
             when Expression_Element =>
-               Append (Out_Buffer,
-                       Evaluate (Current_Element.Expr.all,
-                         Resolver));
+               Append_Value (Out_Buffer,
+                             Current_Element.Expr.all,
+                             Resolver);
             when Statement_Element =>
                case Current_Element.Stmt.Kind is
                   when Endif_Statement | Elif_Statement | Else_Statement
