@@ -2651,6 +2651,9 @@ package body Jintp is
       Get_Template (Filename, Included_Template, Resolver.Get_Environment.all);
       Current := First (Included_Template.Elements);
       Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
+   exception
+      when Name_Error =>
+         raise Template_Error with "template not found: " & Filename;
    end Execute_Include;
 
    procedure Find_Child_Block
