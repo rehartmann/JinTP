@@ -1765,47 +1765,49 @@ package body Jintp is
             end if;
          when Operator_Macro =>
             Macro := Resolver.Get_Macro (Source.Macro_Name);
-            if Macro /= null then
-               declare
-                  Macro_Resolver : Root_Context;
-                  Position : Named_Argument_Vectors.Cursor;
-               begin
-                  for I in 1 .. Macro.Parameters.Length loop
-                     if I <= Source.Macro_Arguments.Length
-                       and then Source.Macro_Arguments (Positive (I)).Name
-                         = Null_Unbounded_String
-                     then
-                        --  Positional parameter
+            if Macro = null then
+               raise Template_Error with "macro '"
+                 & To_String (Source.Macro_Name) & "' not found";
+            end if;
+            declare
+               Macro_Resolver : Root_Context;
+               Position : Named_Argument_Vectors.Cursor;
+            begin
+               for I in 1 .. Macro.Parameters.Length loop
+                  if I <= Source.Macro_Arguments.Length
+                    and then Source.Macro_Arguments (Positive (I)).Name
+                      = Null_Unbounded_String
+                  then
+                     --  Positional parameter
+                     Macro_Resolver.Values.Insert
+                       (Macro.Parameters (Positive (I)).Name,
+                        Evaluate
+                          (Source.Macro_Arguments (Positive (I)).Argument.all,
+                           Resolver));
+                  else
+                     Position := Find_Named_Argument
+                       (Source.Macro_Arguments,
+                        Macro.Parameters (Positive (I)).Name);
+                     if Position /= Named_Argument_Vectors.No_Element then
+                        --  Named parameter
                         Macro_Resolver.Values.Insert
                           (Macro.Parameters (Positive (I)).Name,
                            Evaluate
-                             (Source.Macro_Arguments (Positive (I)).Argument.all,
+                             (Named_Argument_Vectors.Element (Position).Argument.all,
                               Resolver));
-                     else
-                        Position := Find_Named_Argument
-                          (Source.Macro_Arguments,
-                           Macro.Parameters (Positive (I)).Name);
-                        if Position /= Named_Argument_Vectors.No_Element then
-                           --  Named parameter
-                           Macro_Resolver.Values.Insert
-                             (Macro.Parameters (Positive (I)).Name,
-                              Evaluate
-                                (Named_Argument_Vectors.Element (Position).Argument.all,
-                                 Resolver));
-                        elsif Macro.Parameters (Positive (I)).Has_Default_Value then
-                           --  Default parameter value
-                           Init (Macro_Resolver.Values);
-                           Include (Macro_Resolver.Values.Assocs.Value_Assocs,
-                                    (Kind => String_Expression_Value,
-                                     S => Macro.Parameters (Positive (I)).Name),
-                                    Macro.Parameters (Positive (I)).Default_Value);
-                        end if;
+                     elsif Macro.Parameters (Positive (I)).Has_Default_Value then
+                        --  Default parameter value
+                        Init (Macro_Resolver.Values);
+                        Include (Macro_Resolver.Values.Assocs.Value_Assocs,
+                                 (Kind => String_Expression_Value,
+                                  S => Macro.Parameters (Positive (I)).Name),
+                                 Macro.Parameters (Positive (I)).Default_Value);
                      end if;
-                  end loop;
-                  return (Kind => String_Expression_Value,
-                          S => Render (Macro.Elements, "", Macro_Resolver));
-               end;
-            end if;
+                  end if;
+               end loop;
+               return (Kind => String_Expression_Value,
+                       S => Render (Macro.Elements, "", Macro_Resolver));
+            end;
          when others =>
             null;
       end case;
