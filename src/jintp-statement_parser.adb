@@ -196,6 +196,8 @@ package body Statement_Parser is
          when Endblock_Token =>
             Result := (Kind => Endblock_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
+         when Import_Token =>
+            raise Template_Error with "import is not supported yet";
          when others =>
             raise Template_Error with "unexpected token "
               & Current_Token.Kind'Image;

@@ -11,7 +11,7 @@ package Jintp.Scanner is
                        Is_Token, If_Token, Else_Token, Elif_Token, Endif_Token,
                        For_Token, Endfor_Token, Include_Token, Macro_Token,
                        Endmacro_Token, Raw_Token, Endraw_Token, Block_Token,
-                       Endblock_Token, Extends_Token,
+                       Endblock_Token, Extends_Token, Import_Token,
                        Or_Token, And_Token, Not_Token,
                        Assign_Token, Eq_Token, Ineq_Token,
                        Le_Token, Lt_Token, Ge_Token, Gt_Token, Comma_Token,

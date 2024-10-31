@@ -94,7 +94,7 @@ package body Jintp is
                            Include_Statement, Macro_Statement,
                            Endmacro_Statement, Raw_Statement, Endraw_Statement,
                            Extends_Statement, Block_Statement,
-                           Endblock_Statement);
+                           Endblock_Statement, Import_Statement);
 
    type Parameter (Has_Default_Value : Boolean := False) is record
       Name : Unbounded_String;
@@ -130,6 +130,9 @@ package body Jintp is
             Parent_Name : Unbounded_String;
          when Block_Statement =>
             Block_Name : Unbounded_String;
+         when Import_Statement =>
+            Import_Filename : Unbounded_String;
+            Import_Variable_Name : Unbounded_String;
          when others =>
             null;
       end case;
@@ -648,10 +651,12 @@ package body Jintp is
 
       for C in Self.Macros.Iterate loop
          Macro := Element (C);
-         for E of Macro.Elements loop
-            Cleanup (E);
-         end loop;
-         Free_Macro (Macro);
+         if Macro /= null then
+            for E of Macro.Elements loop
+               Cleanup (E);
+            end loop;
+            Free_Macro (Macro);
+         end if;
       end loop;
    end Finalize;
 
@@ -2607,7 +2612,8 @@ package body Jintp is
                   Skip_Control_Block_Elements (Current);
                end if;
             when others =>
-               raise Template_Error with "list or dictionary expected";
+               raise Template_Error with "list or dictionary expected, got "
+                 & Collection_Value.Kind'Image;
          end case;
       end Execute_For_Default;
 
@@ -2649,10 +2655,28 @@ package body Jintp is
    is
       Included_Template : Template;
       Current : Template_Element_Vectors.Cursor;
+      Including_Template : constant Template_Access
+        := Contexts.Current_Template (Resolver);
+      TC : Macro_Maps.Cursor;
+      Inserted : Boolean;
    begin
       Get_Template (Filename, Included_Template, Resolver.Get_Environment.all);
       Current := First (Included_Template.Elements);
       Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
+
+      --  Move macros to including template
+      for C in Included_Template.Macros.Iterate loop
+         Insert (Container => Including_Template.Macros,
+                 Key      => Key (C),
+                 New_Item => Element (C),
+                 Position => TC,
+                 Inserted => Inserted);
+         if Inserted then
+            Replace_Element (Container => Included_Template.Macros,
+                             Position  => C,
+                             New_Item  => null);
+         end if;
+      end loop;
    exception
       when Name_Error =>
          raise Template_Error with "template not found: " & Filename;
