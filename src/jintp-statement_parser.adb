@@ -15,7 +15,7 @@ package body Statement_Parser is
       Settings : Environment'Class) is
       Expression : Expression_Access := Jintp.Expression_Parser.Parse
         (Scanner, Input, Settings);
-      Resolver : Jintp.Root_Context;
+      Resolver : aliased Jintp.Context;
    begin
       Value := Evaluate (Expression.all, Resolver);
       Delete_Expression (Expression);

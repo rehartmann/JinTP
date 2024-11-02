@@ -93,6 +93,10 @@ package Jintp is
                      New_Item : Integer);
 
    procedure Insert (Container : in out Dictionary;
+                     Key : Unbounded_String;
+                     New_Item : Integer);
+
+   procedure Insert (Container : in out Dictionary;
                      Key : String;
                      New_Item : Boolean);
 
