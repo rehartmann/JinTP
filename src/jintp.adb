@@ -356,12 +356,13 @@ package body Jintp is
       Block_Name : Unbounded_String;
       Values : Dictionary;
       Parent_Resolver : Context_Access;
+      Included_Templates : Template_Maps.Map;
    end record;
 
    Loop_Index0_Name : constant Unbounded_String
      := To_Unbounded_String ("loop.index0");
    Loop_Length_Name : constant Unbounded_String
-     := To_Unbounded_String ("loop.lenth");
+     := To_Unbounded_String ("loop.length");
 
    function Loop_Index (Resolver : Context)
                         return Natural is
@@ -487,7 +488,7 @@ package body Jintp is
       elsif Name = "loop.first" then
          Append (Target, Boolean'Image (Loop_First (Resolver)));
       elsif Name = "loop.last" then
-         Append (Target, Boolean'Image (Loop_First (Resolver)));
+         Append (Target, Boolean'Image (Loop_Last (Resolver)));
       elsif Resolver.Parent_Resolver /= null then
          Append (Resolver.Parent_Resolver.all, Target, Name);
       end if;
@@ -589,7 +590,7 @@ package body Jintp is
    end Get_Template;
 
    procedure Add_Parent_Template (Resolver : in out Context;
-                                             Item : Template_Access) is
+                                  Item : Template_Access) is
    begin
       if Resolver.Template_Refs.Is_Empty
         and then Resolver.Parent_Resolver /= null
@@ -720,12 +721,7 @@ package body Jintp is
 
       for C in Self.Macros.Iterate loop
          Macro := Element (C);
-         if Macro /= null then
-            for E of Macro.Elements loop
-               Cleanup (E);
-            end loop;
-            Free_Macro (Macro);
-         end if;
+         Free_Macro (Macro);
       end loop;
    end Finalize;
 
@@ -985,7 +981,6 @@ package body Jintp is
       Current_Line : Positive := 1;
       Last_Pos : Stream_Element_Offset := 1;
       Modifier : Character;
-      Macro_Name : Unbounded_String;
    begin
       Input.Pos := 1;
       Input.Buffer := new Stream_Element_Array
@@ -1025,16 +1020,9 @@ package body Jintp is
                      Value => (Kind => String_Expression_Value,
                                S => Buffer_Slice (Input.Pos, Last_Char_Pos)));
                end;
-               if Macro_Name = Null_Unbounded_String then
-                  Target.Elements.Append ((Line => Current_Line,
-                                           Kind => Expression_Element,
-                                           Expr => New_Expression));
-               else
-                  Target.Macros.Element (Macro_Name)
-                    .Elements.Append ((Line => Current_Line,
-                                       Kind => Expression_Element,
-                                       Expr => New_Expression));
-               end if;
+               Target.Elements.Append ((Line => Current_Line,
+                                        Kind => Expression_Element,
+                                        Expr => New_Expression));
             end if;
             Input.Pos := New_Pos + Start_String_Length (Kind, Settings);
             if Modifier = '+' or else Modifier = '-' then
@@ -1048,16 +1036,9 @@ package body Jintp is
                   Current_Line := Current_Line + Line_Count (Last_Pos,
                                                              Input.Pos - 1);
                   Last_Pos := Input.Pos;
-                  if Macro_Name = Null_Unbounded_String then
-                     Target.Elements.Append ((Line => Current_Line,
-                                              Kind => Expression_Element,
-                                              Expr => New_Expression));
-                  else
-                     Target.Macros.Element (Macro_Name)
-                          .Elements.Append ((Line => Current_Line,
-                                             Kind => Expression_Element,
-                                             Expr => New_Expression));
-                  end if;
+                  Target.Elements.Append ((Line => Current_Line,
+                                           Kind => Expression_Element,
+                                           Expr => New_Expression));
                when Statement_Element =>
                   Jintp.Statement_Parser.Parse (Input,
                                                 Settings,
@@ -1070,47 +1051,18 @@ package body Jintp is
                      SkipLinebreak;
                   end if;
                   Last_Pos := Input.Pos;
-                  if New_Statement.Kind = Macro_Statement then
-                     Macro_Name := New_Statement.Macro_Name;
-                     begin
-                        Target.Macros.Insert (
-                                              New_Statement.Macro_Name,
-                                              new Macro'
-                                                (Parameters => New_Statement.Macro_Parameters,
-                                                 Elements => Template_Element_Vectors.Empty_Vector));
-                     exception
-                        when Constraint_Error =>
-                           raise Template_Error
-                             with "redefining macros is not supported";
-                     end;
-                  elsif New_Statement.Kind = Endmacro_Statement then
-                     Macro_Name := Null_Unbounded_String;
-                  elsif New_Statement.Kind = Raw_Statement then
-                     if Macro_Name = Null_Unbounded_String then
-                        Target.Elements.Append ((Line => Current_Line,
-                                                 Kind => Expression_Element,
-                                                 Expr => Get_Raw (Modifier)));
-                     else
-                        Target.Macros.Element (Macro_Name)
-                          .Elements.Append ((Line => Current_Line,
-                                             Kind => Expression_Element,
-                                             Expr => Get_Raw (Modifier)));
-                     end if;
+                  if New_Statement.Kind = Raw_Statement then
+                     Target.Elements.Append ((Line => Current_Line,
+                                              Kind => Expression_Element,
+                                              Expr => Get_Raw (Modifier)));
                   else
-                     if Macro_Name = Null_Unbounded_String then
-                        Target.Elements.Append ((Line => Current_Line,
-                                                 Kind => Statement_Element,
-                                                 Stmt => New_Statement));
-                        if New_Statement.Kind = Block_Statement then
-                           Target.Block_Map.Include
-                             (New_Statement.Block_Name,
-                              Positive (Target.Elements.Length));
-                        end if;
-                     else
-                        Target.Macros.Element (Macro_Name)
-                          .Elements.Append ((Line => Current_Line,
-                                             Kind => Statement_Element,
-                                             Stmt => New_Statement));
+                     Target.Elements.Append ((Line => Current_Line,
+                                              Kind => Statement_Element,
+                                              Stmt => New_Statement));
+                     if New_Statement.Kind = Block_Statement then
+                        Target.Block_Map.Include
+                          (New_Statement.Block_Name,
+                           Positive (Target.Elements.Length));
                      end if;
                   end if;
                   if Modifier = '-'
@@ -1141,16 +1093,9 @@ package body Jintp is
                          Input.Buffer'Last)
                         )
               );
-            if Macro_Name = Null_Unbounded_String then
-               Target.Elements.Append ((Line => Current_Line,
-                                        Kind => Expression_Element,
-                                        Expr => New_Expression));
-            else
-               Target.Macros.Element (Macro_Name)
-                 .Elements.Append ((Line => Current_Line,
-                                    Kind => Expression_Element,
-                                    Expr => New_Expression));
-            end if;
+            Target.Elements.Append ((Line => Current_Line,
+                                     Kind => Expression_Element,
+                                     Expr => New_Expression));
             exit;
          end if;
       end loop;
@@ -2254,7 +2199,6 @@ package body Jintp is
       Start_Cursor : constant Template_Element_Vectors.Cursor := Current;
       Loop_Resolver : aliased Context;
       Empty_Loop : Boolean := True;
-      Value_Resolver : aliased Context;
       Loop_Length : Natural := 0;
       Loop_Index0 : Natural := 0;
 
@@ -2267,7 +2211,7 @@ package body Jintp is
             raise Template_Error with "dictionary expected";
          end if;
          if Condition = null then
-            Set_Loop_Length (Value_Resolver,
+            Set_Loop_Length (Loop_Resolver,
                              Natural (Collection_Value.Dictionary_Value.Assocs
                              .Value_Assocs.Length));
          else
@@ -2276,36 +2220,33 @@ package body Jintp is
             loop
                Insert_Value (Loop_Resolver.Values, Variable_1_Name, Key (C));
                Insert_Value
-                 (Value_Resolver.Values,
+                 (Loop_Resolver.Values,
                   Variable_2_Name,
                   Collection_Value.Dictionary_Value.Assocs.Value_Assocs (C));
-               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
                if Evaluate_Boolean (Condition.all,
-                                    Value_Resolver)
+                                    Loop_Resolver)
                then
                   Loop_Length := Loop_Length + 1;
                end if;
             end loop;
-            Set_Loop_Length (Value_Resolver,
+            Set_Loop_Length (Loop_Resolver,
                              Loop_Length);
          end if;
-         Set_Loop_Index0 (Value_Resolver, 0);
          for C in Collection_Value.Dictionary_Value.Assocs.Value_Assocs.Iterate
          loop
             Insert_Value (Loop_Resolver.Values, Variable_1_Name, Key (C));
                Insert_Value
-                 (Value_Resolver.Values,
+                 (Loop_Resolver.Values,
                   Variable_2_Name,
                   Collection_Value.Dictionary_Value.Assocs.Value_Assocs (C));
-            Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
             if Condition = null or else Evaluate_Boolean (Condition.all,
-                                                          Value_Resolver)
+                                                          Loop_Resolver)
             then
                Current := Start_Cursor;
                Next (Current);
-               Process_Control_Block_Elements (Current, Out_Buffer, Value_Resolver);
+               Set_Loop_Index0 (Loop_Resolver, Loop_Index0);
+               Process_Control_Block_Elements (Current, Out_Buffer, Loop_Resolver);
                Loop_Index0 := Loop_Index0 + 1;
-               Set_Loop_Index0 (Resolver, Loop_Index0);
                Empty_Loop := False;
             end if;
          end loop;
@@ -2332,7 +2273,6 @@ package body Jintp is
          Reverse_Sort : Boolean)
       is
          Keys : Expression_Value_Vectors.Vector;
-         Value_Resolver : aliased Context;
          Loop_Length : Natural := 0;
          Loop_Index0 : Natural := 0;
       begin
@@ -2347,51 +2287,46 @@ package body Jintp is
          if Condition = null then
             Loop_Length := Natural (Length (Keys));
          else
-            Set_Loop_Length (Value_Resolver, 0);
             for C in Value_Assocs.Iterate loop
                Insert_Value (Loop_Resolver.Values, Variable_1_Name, Key (C));
-               Insert_Value (Value_Resolver.Values,
+               Insert_Value (Loop_Resolver.Values,
                              Variable_2_Name,
                              Value_Assocs (Key (C)));
-               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               if Evaluate_Boolean (Condition.all, Value_Resolver) then
+               if Evaluate_Boolean (Condition.all, Loop_Resolver) then
                   Loop_Length := Loop_Length + 1;
                end if;
             end loop;
          end if;
-         Set_Loop_Length (Value_Resolver, Loop_Length);
+         Set_Loop_Length (Loop_Resolver, Loop_Length);
          if Reverse_Sort then
             for I in reverse 0 .. Natural (Length (Keys) - 1) loop
                Insert_Value (Loop_Resolver.Values, Variable_1_Name, Keys (I));
-               Insert_Value (Value_Resolver.Values,
+               Insert_Value (Loop_Resolver.Values,
                              Variable_2_Name,
                              Value_Assocs (Keys (I)));
-               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               Set_Loop_Index0 (Value_Resolver,
+               Set_Loop_Index0 (Loop_Resolver,
                                 Loop_Length - 1 - I);
                if Condition = null
-                 or else Evaluate_Boolean (Condition.all, Value_Resolver)
+                 or else Evaluate_Boolean (Condition.all, Loop_Resolver)
                then
-                  Process_Control_Block_Elements (Value_Resolver);
+                  Process_Control_Block_Elements (Loop_Resolver);
                   Empty_Loop := False;
                end if;
             end loop;
          else
             Loop_Index0 := 0;
-            Set_Loop_Index0 (Resolver, 0);
             for C in Value_Assocs.Iterate loop
                Insert_Value (Loop_Resolver.Values, Variable_1_Name, Key (C));
-               Insert_Value (Value_Resolver.Values,
+               Insert_Value (Loop_Resolver.Values,
                              Variable_2_Name,
                              Value_Assocs (Key (C)));
-               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
                if Condition = null
-                 or else Evaluate_Boolean (Condition.all, Value_Resolver)
+                 or else Evaluate_Boolean (Condition.all, Loop_Resolver)
                then
-                  Process_Control_Block_Elements (Value_Resolver);
+                  Set_Loop_Index0 (Loop_Resolver, Loop_Index0);
+                  Process_Control_Block_Elements (Loop_Resolver);
                   Empty_Loop := False;
                   Loop_Index0 := Loop_Index0 + 1;
-                  Set_Loop_Index0 (Resolver, Loop_Index0);
                end if;
             end loop;
          end if;
@@ -2404,7 +2339,6 @@ package body Jintp is
                                Case_Sensitive : Boolean;
                                Reverse_Sort : Boolean) is
          Items : Key_And_Value_Vectors.Vector;
-         Value_Resolver : aliased Context;
          Loop_Length : Natural := 0;
       begin
          for C in Value_Assocs.Iterate loop
@@ -2422,34 +2356,31 @@ package body Jintp is
          else
             for I in 0 .. Natural (Length (Items)) - 1 loop
                Insert_Value (Loop_Resolver.Values, Variable_1_Name, Items (I).Key);
-               Insert_Value (Value_Resolver.Values, Variable_2_Name, Items (I).Value);
-               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               if Evaluate_Boolean (Condition.all, Value_Resolver) then
+               Insert_Value (Loop_Resolver.Values, Variable_2_Name, Items (I).Value);
+               if Evaluate_Boolean (Condition.all, Loop_Resolver) then
                   Loop_Length := Loop_Length + 1;
                end if;
             end loop;
          end if;
-         Set_Loop_Length (Value_Resolver, Loop_Length);
+         Set_Loop_Length (Loop_Resolver, Loop_Length);
          if Reverse_Sort then
             for I in reverse 0 .. Natural (Length (Items)) - 1 loop
                Insert_Value (Loop_Resolver.Values, Variable_1_Name, Items (I).Key);
-               Insert_Value (Value_Resolver.Values, Variable_2_Name, Items (I).Value);
-               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               Set_Loop_Index0 (Resolver,
+               Insert_Value (Loop_Resolver.Values, Variable_2_Name, Items (I).Value);
+               Set_Loop_Index0 (Loop_Resolver,
                                 Loop_Length - 1 - I);
                if Condition = null
-                 or else Evaluate_Boolean (Condition.all, Value_Resolver)
+                 or else Evaluate_Boolean (Condition.all, Loop_Resolver)
                then
-                  Process_Control_Block_Elements (Value_Resolver);
+                  Process_Control_Block_Elements (Loop_Resolver);
                end if;
             end loop;
          else
             for I in 0 .. Natural (Length (Items)) - 1 loop
                Insert_Value (Loop_Resolver.Values, Variable_1_Name, Items (I).Key);
-               Insert_Value (Value_Resolver.Values, Variable_2_Name, Items (I).Value);
-               Value_Resolver.Parent_Resolver := Loop_Resolver'Unchecked_Access;
-               Set_Loop_Index0 (Value_Resolver, I);
-               Process_Control_Block_Elements (Value_Resolver);
+               Insert_Value (Loop_Resolver.Values, Variable_2_Name, Items (I).Value);
+               Set_Loop_Index0 (Loop_Resolver, I);
+               Process_Control_Block_Elements (Loop_Resolver);
             end loop;
          end if;
       end Execute_Sorted_By_Value;
@@ -2529,7 +2460,7 @@ package body Jintp is
                      end if;
                   end loop;
                end if;
-               Set_Loop_Length (Resolver, Loop_Length);
+               Set_Loop_Length (Loop_Resolver, Loop_Length);
                for E of Collection_Value.List_Value.Elements.Values loop
                   Insert_Value (Loop_Resolver.Values, Variable_1_Name, E);
                   if Condition = null or else Evaluate_Boolean (Condition.all,
@@ -2537,10 +2468,10 @@ package body Jintp is
                   then
                      Current := Start_Cursor;
                      Next (Current);
+                     Set_Loop_Index0 (Loop_Resolver, Loop_Index0);
                      Process_Control_Block_Elements (Current, Out_Buffer, Loop_Resolver);
                      Empty_Loop := False;
                      Loop_Index0 := Loop_Index0 + 1;
-                     Set_Loop_Index0 (Resolver, Loop_Index0);
                   end if;
                end loop;
                if Empty_Loop then
@@ -2566,7 +2497,7 @@ package body Jintp is
                      end if;
                   end loop;
                end if;
-               Set_Loop_Length (Resolver, Loop_Length);
+               Set_Loop_Length (Loop_Resolver, Loop_Length);
                for C in Collection_Value.Dictionary_Value.Assocs.Value_Assocs
                  .Iterate loop
                      Insert_Value (Loop_Resolver.Values, Variable_1_Name, Key (C));
@@ -2575,12 +2506,12 @@ package body Jintp is
                   then
                      Current := Start_Cursor;
                      Next (Current);
+                     Set_Loop_Index0 (Loop_Resolver, Loop_Index0);
                      Process_Control_Block_Elements (Current,
                                                      Out_Buffer,
                                                      Loop_Resolver);
                      Empty_Loop := False;
                      Loop_Index0 := Loop_Index0 + 1;
-                     Set_Loop_Index0 (Resolver, Loop_Index0);
                   end if;
                end loop;
                if Empty_Loop then
@@ -2628,34 +2559,64 @@ package body Jintp is
                               Out_Buffer : in out Unbounded_String;
                               Resolver : aliased in out Context)
    is
-      Included_Template : Template;
+      Included_Template : Template_Access;
       Current : Template_Element_Vectors.Cursor;
-      Including_Template : constant Template_Access
-        := Current_Template (Resolver);
-      TC : Macro_Maps.Cursor;
-      Inserted : Boolean;
    begin
-      Get_Template (Filename, Included_Template, Get_Environment (Resolver).all);
+      if Resolver.Parent_Resolver /= null then
+         raise Template_Error with "including templates is only permitted at top level";
+      end if;
+      Included_Template := new Template;
+      Resolver.Included_Templates.Insert (To_Unbounded_String (Filename),
+                                          Included_Template);
+      Get_Template (Filename, Included_Template.all, Get_Environment (Resolver).all);
       Current := First (Included_Template.Elements);
       Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
-
-      --  Move macros to including template
-      for C in Included_Template.Macros.Iterate loop
-         Insert (Container => Including_Template.Macros,
-                 Key      => Key (C),
-                 New_Item => Element (C),
-                 Position => TC,
-                 Inserted => Inserted);
-         if Inserted then
-            Replace_Element (Container => Included_Template.Macros,
-                             Position  => C,
-                             New_Item  => null);
-         end if;
-      end loop;
    exception
       when Name_Error =>
+         Free_Template (Included_Template);
          raise Template_Error with "template not found: " & Filename;
+      when Constraint_Error =>
+         Free_Template (Included_Template);
+         raise Template_Error with "including a template twice is not supported";
+      when others =>
+         Free_Template (Included_Template);
+         raise;
    end Execute_Include;
+
+   procedure Execute_Macro (Name : Unbounded_String;
+                            Parameters : Parameter_Vectors.Vector;
+                            Current : in out Template_Element_Vectors.Cursor;
+                            Resolver : aliased in out Context)
+   is
+      Template : constant Template_Access := Current_Template (Resolver);
+      Position : Macro_Maps.Cursor := Template.Macros.Find (Name);
+      M : Macro_Access;
+      E : Template_Element;
+      Elements : Template_Element_Vectors.Vector;
+   begin
+      if Position /= Macro_Maps.No_Element then
+         --  Delete old macro
+         M := Element (Position);
+         Free_Macro (M);
+         Template.Macros.Delete (Position);
+      end if;
+      Current := Template_Element_Vectors.Next (Current);
+      while Current /= Template_Element_Vectors.No_Element loop
+         E := Element (Current);
+         if E.Kind = Statement_Element
+           and then E.Stmt.Kind = Endmacro_Statement
+         then
+            exit;
+         end if;
+         Elements.Append (E);
+         Current := Template_Element_Vectors.Next (Current);
+      end loop;
+      M := new Macro'
+           (Parameters => Parameters,
+            Elements => Elements);
+      Template.Macros.Insert
+        (Name, M);
+   end Execute_Macro;
 
    procedure Find_Child_Block
      (Resolver : Context;
@@ -2755,6 +2716,11 @@ package body Jintp is
             if Template_Count (Resolver) > 0 then
                Replace_Block;
             end if;
+         when Macro_Statement =>
+            Execute_Macro (Stmt.Macro_Name,
+                           Stmt.Macro_Parameters,
+                           Current,
+                           Resolver);
          when others =>
             null;
       end case;
@@ -2851,9 +2817,21 @@ package body Jintp is
          Template_Index => 1,
          Block_Name => Null_Unbounded_String,
          Values => Values,
-         Parent_Resolver => null);
+         Parent_Resolver => null,
+         Included_Templates => Template_Maps.Empty_Map);
+      Result : Unbounded_String;
    begin
-      return Render (Filename, Resolver);
+      Result := Render (Filename, Resolver);
+      for C in Resolver.Included_Templates.Iterate loop
+         Free_Template (Resolver.Included_Templates (C));
+      end loop;
+      return Result;
+   exception
+      when others =>
+         for C in Resolver.Included_Templates.Iterate loop
+            Free_Template (Resolver.Included_Templates (C));
+         end loop;
+         raise;
    end Render;
 
    function Render (Filename : String;
