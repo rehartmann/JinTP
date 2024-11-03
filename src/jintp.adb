@@ -187,7 +187,6 @@ package body Jintp is
       Timestamp : Time;
       Filename : Unbounded_String;
       Elements : Template_Element_Vectors.Vector;
-      Macros : Macro_Maps.Map;
       Block_Map : Block_Maps.Map;
    end record;
 
@@ -349,7 +348,7 @@ package body Jintp is
 
    type Context_Access is access all Context;
 
-   type Context is record
+   type Context is new Ada.Finalization.Controlled with record
       Settings : Environment_Access;
       Template_Refs : Template_Access_Vectors.Vector; -- For template inheritance
       Template_Index : Positive;
@@ -357,7 +356,10 @@ package body Jintp is
       Values : Dictionary;
       Parent_Resolver : Context_Access;
       Included_Templates : Template_Maps.Map;
+      Macros : Macro_Maps.Map;
    end record;
+
+   overriding procedure Finalize (Self : in out Context);
 
    Loop_Index0_Name : constant Unbounded_String
      := To_Unbounded_String ("loop.index0");
@@ -514,15 +516,11 @@ package body Jintp is
                        return Macro_Access is
       Position : Macro_Maps.Cursor;
    begin
-      if Resolver.Template_Refs.Is_Empty then
-         if Resolver.Parent_Resolver /= null then
-            return Get_Macro (Resolver.Parent_Resolver.all,
-                              Name);
-         end if;
-         return null;
+      if Resolver.Parent_Resolver /= null then
+         return Get_Macro (Resolver.Parent_Resolver.all,
+                           Name);
       end if;
-      Position := Macro_Maps.Find
-        (Resolver.Template_Refs.Element (Current_Template_Index (Resolver)).Macros, Name);
+      Position := Macro_Maps.Find (Resolver.Macros, Name);
       if Position = Macro_Maps.No_Element then
          return null;
       end if;
@@ -638,6 +636,21 @@ package body Jintp is
    procedure Free_Template is new Ada.Unchecked_Deallocation (Template,
                                                               Template_Access);
 
+   overriding procedure Finalize (Self : in out Context) is
+      Macro : Macro_Access;
+   begin
+      for C in Self.Included_Templates.Iterate loop
+         Free_Template (Self.Included_Templates (C));
+      end loop;
+      Self.Included_Templates.Clear;
+
+      for C in Self.Macros.Iterate loop
+         Macro := Element (C);
+         Free_Macro (Macro);
+      end loop;
+      Self.Macros.Clear;
+   end Finalize;
+
    protected body Template_Cache is
       function Get (Path : String) return Template_Access is
          C : constant Template_Maps.Cursor
@@ -713,16 +726,11 @@ package body Jintp is
    end Cleanup;
 
    overriding procedure Finalize (Self : in out Template) is
-      Macro : Macro_Access;
    begin
       for E of Self.Elements loop
          Cleanup (E);
       end loop;
-
-      for C in Self.Macros.Iterate loop
-         Macro := Element (C);
-         Free_Macro (Macro);
-      end loop;
+      Self.Elements.Clear;
    end Finalize;
 
    type Stream_Element_Array_Access is access Stream_Element_Array;
@@ -2588,17 +2596,21 @@ package body Jintp is
                             Current : in out Template_Element_Vectors.Cursor;
                             Resolver : aliased in out Context)
    is
-      Template : constant Template_Access := Current_Template (Resolver);
-      Position : Macro_Maps.Cursor := Template.Macros.Find (Name);
+      Position : Macro_Maps.Cursor;
       M : Macro_Access;
       E : Template_Element;
       Elements : Template_Element_Vectors.Vector;
+      Root_Context : Context_Access := Resolver'Unchecked_Access;
    begin
+      while Root_Context.Parent_Resolver /= null loop
+         Root_Context := Root_Context.Parent_Resolver;
+      end loop;
+      Position := Macro_Maps.Find (Root_Context.Macros, Name);
       if Position /= Macro_Maps.No_Element then
          --  Delete old macro
          M := Element (Position);
          Free_Macro (M);
-         Template.Macros.Delete (Position);
+         Root_Context.Macros.Delete (Position);
       end if;
       Current := Template_Element_Vectors.Next (Current);
       while Current /= Template_Element_Vectors.No_Element loop
@@ -2614,7 +2626,7 @@ package body Jintp is
       M := new Macro'
            (Parameters => Parameters,
             Elements => Elements);
-      Template.Macros.Insert
+      Root_Context.Macros.Insert
         (Name, M);
    end Execute_Macro;
 
@@ -2812,20 +2824,17 @@ package body Jintp is
                     Settings : in out Environment'Class)
                     return Unbounded_String is
       Resolver : aliased Context :=
-        (Settings => Settings'Unchecked_Access,
+        (Ada.Finalization.Controlled with
+         Settings => Settings'Unchecked_Access,
          Template_Refs => Template_Access_Vectors.Empty_Vector,
          Template_Index => 1,
          Block_Name => Null_Unbounded_String,
          Values => Values,
          Parent_Resolver => null,
-         Included_Templates => Template_Maps.Empty_Map);
-      Result : Unbounded_String;
+         Included_Templates => Template_Maps.Empty_Map,
+         Macros => Macro_Maps.Empty_Map);
    begin
-      Result := Render (Filename, Resolver);
-      for C in Resolver.Included_Templates.Iterate loop
-         Free_Template (Resolver.Included_Templates (C));
-      end loop;
-      return Result;
+      return Render (Filename, Resolver);
    exception
       when others =>
          for C in Resolver.Included_Templates.Iterate loop
