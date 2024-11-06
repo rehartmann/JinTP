@@ -188,6 +188,7 @@ package body Jintp is
       Filename : Unbounded_String;
       Elements : Template_Element_Vectors.Vector;
       Block_Map : Block_Maps.Map;
+      Cached : Boolean;
    end record;
 
    overriding procedure Finalize (Self : in out Template);
@@ -1511,8 +1512,8 @@ package body Jintp is
                case Element.Stmt.Kind is
                when Extends_Statement =>
                   Append (Out_Buffer,
-                          Unbounded_String'(Render (To_String (Element.Stmt.Parent_Name),
-                            Resolver)));
+                          Render (To_String (Element.Stmt.Parent_Name),
+                           Resolver));
                   return Out_Buffer;
                when others =>
                   Execute_Statement (Element.Stmt,
@@ -2784,7 +2785,6 @@ package body Jintp is
         Get_Environment (Resolver).Cached_Templates.Get (Filename);
       File_Time : Time;
       Must_Free : Boolean := False;
-      Inserted : Boolean;
    begin
       File_Time := Ada.Directories.Modification_Time (Filename);
       if New_Template = null or else File_Time > New_Template.Timestamp then
@@ -2792,25 +2792,32 @@ package body Jintp is
             New_Template := new Template;
             New_Template.Timestamp := File_Time;
             Get_Template (Filename, New_Template.all, Get_Environment (Resolver).all);
-            Get_Environment (Resolver).Cached_Templates.Put (Filename,
-                                           New_Template,
-                                           Get_Environment (Resolver).Max_Cache_Size,
-                                           Inserted);
+            Get_Environment (Resolver).Cached_Templates.Put
+              (Path     => Filename,
+               Template => New_Template,
+               Max_Size => Get_Environment (Resolver).Max_Cache_Size,
+               Inserted => New_Template.Cached);
          exception
             when others =>
                Free_Template (New_Template);
                raise;
          end;
-         Must_Free := not Inserted;
+         Must_Free := not New_Template.Cached;
       end if;
       Add_Parent_Template (Resolver, New_Template);
       if Must_Free then
          declare
-            Result : constant Unbounded_String
-              := Render (New_Template.Elements, Filename, Resolver);
+            Result : Unbounded_String;
          begin
+            Result := Render (New_Template.Elements, Filename, Resolver);
+            Resolver.Template_Refs.Clear;
             Free_Template (New_Template);
             return Result;
+         exception
+            when others =>
+               Free_Template (New_Template);
+               Resolver.Template_Refs.Clear;
+               raise;
          end;
       end if;
       return Render (New_Template.Elements, Filename, Resolver);
