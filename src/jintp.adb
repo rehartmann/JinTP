@@ -230,6 +230,7 @@ package body Jintp is
          when Operator_Super .. Operator_Items =>
             Named_Arguments : Named_Argument_Vectors.Vector;
          when Operator_Macro =>
+            Macro_Variable_Name : Unbounded_String;
             Macro_Name : Unbounded_String;
             Macro_Arguments : Named_Argument_Vectors.Vector;
       end case;
@@ -351,13 +352,14 @@ package body Jintp is
 
    type Context is new Ada.Finalization.Controlled with record
       Settings : Environment_Access;
+      Parent_Resolver : Context_Access;
+      Values : Dictionary;
       Template_Refs : Template_Access_Vectors.Vector; -- For template inheritance
       Template_Index : Positive;
       Block_Name : Unbounded_String;
-      Values : Dictionary;
-      Parent_Resolver : Context_Access;
       Included_Templates : Template_Maps.Map;
       Macros : Macro_Maps.Map;
+      Imported_Templates : Template_Maps.Map;
    end record;
 
    overriding procedure Finalize (Self : in out Context);
@@ -644,6 +646,13 @@ package body Jintp is
          Free_Template (Self.Included_Templates (C));
       end loop;
       Self.Included_Templates.Clear;
+
+      for C in Self.Imported_Templates.Iterate loop
+         if not Self.Imported_Templates (C).Cached then
+            Free_Template (Self.Imported_Templates (C));
+         end if;
+      end loop;
+      Self.Imported_Templates.Clear;
 
       for C in Self.Macros.Iterate loop
          Macro := Element (C);
@@ -1799,7 +1808,10 @@ package body Jintp is
                raise Template_Error with "dictionary or list expected before '['";
             end if;
          when Operator_Macro =>
-            Macro := Get_Macro (Resolver, Source.Macro_Name);
+            Macro := (if Source.Macro_Variable_Name = Null_Unbounded_String
+                      then Get_Macro (Resolver, Source.Macro_Name)
+                      else Get_Macro (Resolver, Source.Macro_Variable_Name
+                        & "." & Source.Macro_Name));
             if Macro = null then
                raise Template_Error with "macro '"
                  & To_String (Source.Macro_Name) & "' not found";
@@ -2627,9 +2639,65 @@ package body Jintp is
       M := new Macro'
            (Parameters => Parameters,
             Elements => Elements);
-      Root_Context.Macros.Insert
-        (Name, M);
+      Root_Context.Macros.Insert (Name, M);
    end Execute_Macro;
+
+   function Get_Template (Filename : String;
+                          Resolver : aliased in out Context)
+                          return Template_Access is
+      New_Template : Template_Access :=
+        Get_Environment (Resolver).Cached_Templates.Get (Filename);
+      File_Time : Time;
+   begin
+      File_Time := Ada.Directories.Modification_Time (Filename);
+      if New_Template = null or else File_Time > New_Template.Timestamp then
+         begin
+            New_Template := new Template;
+            New_Template.Timestamp := File_Time;
+            Get_Template (Filename, New_Template.all, Get_Environment (Resolver).all);
+            Get_Environment (Resolver).Cached_Templates.Put
+              (Path     => Filename,
+               Template => New_Template,
+               Max_Size => Get_Environment (Resolver).Max_Cache_Size,
+               Inserted => New_Template.Cached);
+         exception
+            when others =>
+               Free_Template (New_Template);
+               raise;
+         end;
+      end if;
+      return New_Template;
+   end Get_Template;
+
+   procedure Execute_Import (Filename : String;
+                             Variable_Name : Unbounded_String;
+                             Resolver : aliased in out Context) is
+      New_Template : constant Template_Access := Get_Template (Filename,
+                                                               Resolver);
+      Current : Template_Element_Vectors.Cursor;
+      E : Template_Element;
+   begin
+      Resolver.Imported_Templates.Insert (Variable_Name, New_Template);
+      Current := First (New_Template.Elements);
+      while Current /= Template_Element_Vectors.No_Element loop
+         E := Template_Element_Vectors.Element (Current);
+         if E.Kind = Statement_Element
+           and then E.Stmt.Kind = Macro_Statement
+         then
+            Execute_Macro (Variable_Name & "." & To_String (E.Stmt.Macro_Name),
+                        E.Stmt.Macro_Parameters,
+                        Current,
+                        Resolver);
+         end if;
+         if Current = Template_Element_Vectors.No_Element then
+            exit;
+         end if;
+         Next (Current);
+      end loop;
+   exception
+      when Constraint_Error =>
+         raise Template_Error with "importing a template twice is not supported";
+   end Execute_Import;
 
    procedure Find_Child_Block
      (Resolver : Context;
@@ -2734,6 +2802,10 @@ package body Jintp is
                            Stmt.Macro_Parameters,
                            Current,
                            Resolver);
+         when Import_Statement =>
+            Execute_Import (To_String (Stmt.Import_Filename),
+                            Stmt.Import_Variable_Name,
+                            Resolver);
          when others =>
             null;
       end case;
@@ -2781,31 +2853,10 @@ package body Jintp is
    function Render (Filename : String;
                     Resolver : aliased in out Context)
                     return Unbounded_String is
-      New_Template : Template_Access :=
-        Get_Environment (Resolver).Cached_Templates.Get (Filename);
-      File_Time : Time;
-      Must_Free : Boolean := False;
+      New_Template : Template_Access := Get_Template (Filename, Resolver);
    begin
-      File_Time := Ada.Directories.Modification_Time (Filename);
-      if New_Template = null or else File_Time > New_Template.Timestamp then
-         begin
-            New_Template := new Template;
-            New_Template.Timestamp := File_Time;
-            Get_Template (Filename, New_Template.all, Get_Environment (Resolver).all);
-            Get_Environment (Resolver).Cached_Templates.Put
-              (Path     => Filename,
-               Template => New_Template,
-               Max_Size => Get_Environment (Resolver).Max_Cache_Size,
-               Inserted => New_Template.Cached);
-         exception
-            when others =>
-               Free_Template (New_Template);
-               raise;
-         end;
-         Must_Free := not New_Template.Cached;
-      end if;
       Add_Parent_Template (Resolver, New_Template);
-      if Must_Free then
+      if not New_Template.Cached then
          declare
             Result : Unbounded_String;
          begin
@@ -2839,7 +2890,8 @@ package body Jintp is
          Values => Values,
          Parent_Resolver => null,
          Included_Templates => Template_Maps.Empty_Map,
-         Macros => Macro_Maps.Empty_Map);
+         Macros => Macro_Maps.Empty_Map,
+         Imported_Templates => Template_Maps.Empty_Map);
    begin
       return Render (Filename, Resolver);
    exception

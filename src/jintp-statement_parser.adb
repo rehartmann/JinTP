@@ -80,6 +80,7 @@ package body Statement_Parser is
       Control_Expression : Expression_Access;
       Variable_Name : Unbounded_String;
       Variable_2_Name : Unbounded_String;
+      File_Name : Unbounded_String;
       Condition : Expression_Access := null;
       Scanner : Scanner_State;
       Current_Token : Token;
@@ -197,7 +198,26 @@ package body Statement_Parser is
             Result := (Kind => Endblock_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
          when Import_Token =>
-            raise Template_Error with "import is not supported yet";
+            Next_Token (Scanner, Input, Current_Token, Settings);
+            if Current_Token.Kind /= String_Literal_Token then
+               raise Template_Error with "template name expected, got "
+                 & Current_Token.Kind'Image;
+            end if;
+            File_Name := Current_Token.String_Value;
+            Next_Token (Scanner, Input, Current_Token, Settings);
+            if Current_Token.Kind /= As_Token then
+               raise Template_Error with "'as' expected, got "
+                 & Current_Token.Kind'Image;
+            end if;
+            Next_Token (Scanner, Input, Current_Token, Settings);
+            if Current_Token.Kind /= Identifier_Token then
+               raise Template_Error with "macro name expected, got "
+                 & Current_Token.Kind'Image;
+            end if;
+            Result := (Kind => Import_Statement,
+                       Import_Filename => File_Name,
+                       Import_Variable_Name => Current_Token.Identifier);
+            Next_Token (Scanner, Input, Current_Token, Settings);
          when others =>
             raise Template_Error with "unexpected token "
               & Current_Token.Kind'Image;

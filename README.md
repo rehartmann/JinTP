@@ -56,7 +56,8 @@ Output:
 
 ## Statements
 
-The following statements are supported: block, extends, for, if, include, macro.
+The following statements are supported: block, extends, for, if, include,
+macro, import.
 
 ## Filters
 

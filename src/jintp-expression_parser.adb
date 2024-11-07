@@ -118,7 +118,7 @@ package body Expression_Parser is
             exit;
          end if;
          if Current_Token.Kind /= Comma_Token then
-            raise Template_Error with "'}' or ',' expected, encountered "
+            raise Template_Error with "'}' or ',' expected, got "
               & Current_Token.Kind'Image;
          end if;
          Next_Token (Scanner, Input, Current_Token, Settings);
@@ -146,7 +146,7 @@ package body Expression_Parser is
    end To_Array;
 
    function To_Vector (Left : Expression_Access;
-                      Right : Expression_Access := null)
+                       Right : Expression_Access := null)
                       return Named_Argument_Vectors.Vector
    is
       Result : Named_Argument_Vectors.Vector;
@@ -189,9 +189,11 @@ package body Expression_Parser is
                   Result := new Expression'(Kind => Operator_Super,
                                             Named_Arguments => Arguments);
                else
-                  Result := new Expression'(Kind => Operator_Macro,
-                                            Macro_Name => Name,
-                                            Macro_Arguments => Arguments);
+                  Result := new Expression'
+                    (Kind => Operator_Macro,
+                     Macro_Variable_Name => Null_Unbounded_String,
+                     Macro_Name => Name,
+                     Macro_Arguments => Arguments);
                end if;
             else
                Result := new Expression'(Kind => Variable,
@@ -234,7 +236,7 @@ package body Expression_Parser is
             Result := Parse (Scanner, Input, Settings);
             if Jintp.Scanner.Current_Token (Scanner).Kind /= Right_Paren_Token
             then
-               raise Template_Error with "')' expected, found: "
+               raise Template_Error with "')' expected, got "
                  & Current_Token.Kind'Image;
             end if;
             Next_Token (Scanner, Input, Current_Token, Settings);
@@ -245,7 +247,7 @@ package body Expression_Parser is
             return Parse_Dictionary (Scanner, Input, Settings);
          when others =>
             raise Template_Error with
-              "identifier, literal, '(', '[', or '{' expected, read "
+              "identifier, literal, '(', '[', or '{' expected, got "
               & Current_Token.Kind'Image;
       end case;
       while Current_Token.Kind = Period_Token
@@ -260,33 +262,48 @@ package body Expression_Parser is
             begin
                Next_Token (Scanner, Input, Current_Token, Settings);
                if Current_Token.Kind = Left_Paren_Token then
-                  Next_Token (Scanner, Input, Current_Token, Settings);
-                  if Current_Token.Kind /= Right_Paren_Token then
-                     raise Template_Error with "')' expected";
-                  end if;
+                  Parse_Named_Arguments (Scanner, Input, Arguments, Settings,
+                                         False);
                   if Id = "super" then
+                     if Arguments.Length > 0 then
+                        raise Template_Error
+                          with "'super' does not support any arguments here";
+                     end if;
                      Result := new Expression'
                        (Kind => Operator_Super,
                         Named_Arguments => To_Vector (Result)
                        );
                   elsif Id = "items" then
+                     if Arguments.Length > 0 then
+                        raise Template_Error
+                          with "'items' does not support any arguments here";
+                     end if;
                      Result := new Expression'
                        (Kind => Operator_Items,
                         Named_Arguments => To_Vector (Result)
                        );
                   else
-                     raise Template_Error with "invalid operator " & Id;
+                     if Result.Kind /= Variable then
+                        Delete_Expression (Result);
+                        raise Template_Error with "variable expected";
+                     end if;
+                     Name := Result.Variable_Name;
+                     Delete_Expression (Result);
+                     Result := new Expression'
+                       (Kind => Operator_Macro,
+                        Macro_Variable_Name => Name,
+                        Macro_Name => To_Unbounded_String (Id),
+                        Macro_Arguments => Arguments);
                   end if;
-                  Next_Token (Scanner, Input, Current_Token, Settings);
                else
                   Result := new Expression'
                     (Kind => Operator_Dot,
                      Named_Arguments => To_Vector (Result,
-                                   new Expression'
-                                     (Kind => Variable,
-                                      Variable_Name => To_Unbounded_String (Id)
-                                     )
-                                   )
+                       new Expression'
+                         (Kind => Variable,
+                          Variable_Name => To_Unbounded_String (Id)
+                         )
+                      )
                     );
                end if;
             end;
@@ -680,8 +697,7 @@ package body Expression_Parser is
             else
                Argument.Argument := new Expression'
                  (Kind => Variable,
-                  Variable_Name => Argument.Name
-                 );
+                  Variable_Name => Argument.Name);
                Argument.Name := Null_Unbounded_String;
             end if;
          else
@@ -694,7 +710,8 @@ package body Expression_Parser is
             exit;
          end if;
          if Current_Token.Kind /= Comma_Token then
-            raise Template_Error with "',' or ')' expected";
+            raise Template_Error with "',' or ')' expected, got "
+              & Current_Token.Kind'Image;
          end if;
          Next_Token (Scanner, Input, Current_Token, Settings);
       end loop;
