@@ -2672,7 +2672,7 @@ package body Jintp is
    procedure Execute_Import (Filename : String;
                              Variable_Name : Unbounded_String;
                              Resolver : aliased in out Context) is
-      New_Template : constant Template_Access := Get_Template (Filename,
+      New_Template : Template_Access := Get_Template (Filename,
                                                                Resolver);
       Current : Template_Element_Vectors.Cursor;
       E : Template_Element;
@@ -2696,6 +2696,9 @@ package body Jintp is
       end loop;
    exception
       when Constraint_Error =>
+         if not New_Template.Cached then
+            Free_Template (New_Template);
+         end if;
          raise Template_Error with "importing a template twice is not supported";
    end Execute_Import;
 
