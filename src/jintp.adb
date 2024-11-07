@@ -642,6 +642,12 @@ package body Jintp is
    overriding procedure Finalize (Self : in out Context) is
       Macro : Macro_Access;
    begin
+      for C in Self.Macros.Iterate loop
+         Macro := Element (C);
+         Free_Macro (Macro);
+      end loop;
+      Self.Macros.Clear;
+
       for C in Self.Included_Templates.Iterate loop
          Free_Template (Self.Included_Templates (C));
       end loop;
@@ -653,12 +659,6 @@ package body Jintp is
          end if;
       end loop;
       Self.Imported_Templates.Clear;
-
-      for C in Self.Macros.Iterate loop
-         Macro := Element (C);
-         Free_Macro (Macro);
-      end loop;
-      Self.Macros.Clear;
    end Finalize;
 
    protected body Template_Cache is
