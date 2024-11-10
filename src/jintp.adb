@@ -2587,9 +2587,9 @@ package body Jintp is
          raise Template_Error with "including templates is only permitted at top level";
       end if;
       Included_Template := new Template;
+      Get_Template (Filename, Included_Template.all, Get_Environment (Resolver).all);
       Resolver.Included_Templates.Insert (To_Unbounded_String (Filename),
                                           Included_Template);
-      Get_Template (Filename, Included_Template.all, Get_Environment (Resolver).all);
       Current := First (Included_Template.Elements);
       Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
    exception
@@ -2672,11 +2672,11 @@ package body Jintp is
    procedure Execute_Import (Filename : String;
                              Variable_Name : Unbounded_String;
                              Resolver : aliased in out Context) is
-      New_Template : Template_Access := Get_Template (Filename,
-                                                               Resolver);
+      New_Template : Template_Access;
       Current : Template_Element_Vectors.Cursor;
       E : Template_Element;
    begin
+      New_Template := Get_Template (Filename, Resolver);
       Resolver.Imported_Templates.Insert (Variable_Name, New_Template);
       Current := First (New_Template.Elements);
       while Current /= Template_Element_Vectors.No_Element loop
@@ -2700,6 +2700,8 @@ package body Jintp is
             Free_Template (New_Template);
          end if;
          raise Template_Error with "importing a template twice is not supported";
+      when Name_Error =>
+         raise Template_Error with "template not found: " & Filename;
    end Execute_Import;
 
    procedure Find_Child_Block
