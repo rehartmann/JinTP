@@ -2586,22 +2586,24 @@ package body Jintp is
       if Resolver.Parent_Resolver /= null then
          raise Template_Error with "including templates is only permitted at top level";
       end if;
-      Included_Template := new Template;
-      Get_Template (Filename, Included_Template.all, Get_Environment (Resolver).all);
+      begin
+         Included_Template := new Template;
+         Get_Template (Filename, Included_Template.all, Get_Environment (Resolver).all);
+      exception
+         when Name_Error =>
+            Free_Template (Included_Template);
+            raise Template_Error with "template not found: " & Filename;
+         when Constraint_Error =>
+            Free_Template (Included_Template);
+            raise Template_Error with "including a template twice is not supported";
+         when others =>
+            Free_Template (Included_Template);
+            raise;
+      end;
       Resolver.Included_Templates.Insert (To_Unbounded_String (Filename),
                                           Included_Template);
       Current := First (Included_Template.Elements);
       Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
-   exception
-      when Name_Error =>
-         Free_Template (Included_Template);
-         raise Template_Error with "template not found: " & Filename;
-      when Constraint_Error =>
-         Free_Template (Included_Template);
-         raise Template_Error with "including a template twice is not supported";
-      when others =>
-         Free_Template (Included_Template);
-         raise;
    end Execute_Include;
 
    procedure Execute_Macro (Name : Unbounded_String;
