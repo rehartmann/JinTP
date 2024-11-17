@@ -153,7 +153,7 @@ package body Statement_Parser is
                raise Template_Error with "filename expected";
             end if;
             Result := (Kind => Include_Statement,
-                       Filename => Current_Token.String_Value);
+                       File_Name => Current_Token.String_Value);
             Next_Token (Scanner, Input, Current_Token, Settings);
          when Macro_Token =>
             Next_Token (Scanner, Input, Current_Token, Settings);
@@ -216,7 +216,7 @@ package body Statement_Parser is
                  & Current_Token.Kind'Image;
             end if;
             Result := (Kind => Import_Statement,
-                       Import_Filename => File_Name,
+                       Import_File_Name => File_Name,
                        Import_Variable_Name => Current_Token.Identifier);
             Next_Token (Scanner, Input, Current_Token, Settings);
          when From_Token =>
@@ -257,7 +257,7 @@ package body Statement_Parser is
                end if;
             end loop;
             Result := (Kind => From_Import_Statement,
-                       From_Filename => File_Name,
+                       From_File_Name => File_Name,
                        Import_Variable_Names => Import_Variables);
          when others =>
             raise Template_Error with "unexpected token "

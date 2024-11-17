@@ -132,7 +132,7 @@ package body Jintp is
             For_Expression : Expression_Access;
             For_Condition : Expression_Access;
          when Include_Statement =>
-            Filename : Unbounded_String;
+            File_Name : Unbounded_String;
          when Macro_Statement =>
             Macro_Name : Unbounded_String;
             Macro_Parameters : Parameter_Vectors.Vector;
@@ -141,10 +141,10 @@ package body Jintp is
          when Block_Statement =>
             Block_Name : Unbounded_String;
          when Import_Statement =>
-            Import_Filename : Unbounded_String;
+            Import_File_Name : Unbounded_String;
             Import_Variable_Name : Unbounded_String;
          when From_Import_Statement =>
-            From_Filename : Unbounded_String;
+            From_File_Name : Unbounded_String;
             Import_Variable_Names : String_Mapping_Vectors.Vector;
          when others =>
             null;
@@ -198,7 +198,7 @@ package body Jintp is
 
    type Template is new Ada.Finalization.Limited_Controlled with record
       Timestamp : Time;
-      Filename : Unbounded_String;
+      File_Name : Unbounded_String;
       Elements : Template_Element_Vectors.Vector;
       Block_Map : Block_Maps.Map;
       Cached : Boolean;
@@ -823,23 +823,23 @@ package body Jintp is
    end Start_String_Length;
 
    procedure Raise_With_Location (Message : String;
-                                  Filename : String;
+                                  File_Name : String;
                                   Line : Positive);
 
    pragma No_Return (Raise_With_Location);
 
    procedure Raise_With_Location (Message : String;
-                                  Filename : String;
+                                  File_Name : String;
                                   Line : Positive) is
    begin
       if Ada.Strings.Fixed.Index (Message, "File ") = 0 then
-         raise Template_Error with "File """ & Filename & """, line"
+         raise Template_Error with "File """ & File_Name & """, line"
            & Line'Image & ": " & Message;
       end if;
       raise Template_Error with Message;
    end Raise_With_Location;
 
-   procedure Get_Template (Filename : String;
+   procedure Get_Template (File_Name : String;
                            Target : out Template;
                            Settings : Environment'Class := Default_Environment) is
       Input : File_Parser_Input;
@@ -1008,7 +1008,7 @@ package body Jintp is
       New_Statement : Statement;
       New_Pos : Stream_Element_Offset;
       Input_Size : Ada.Directories.File_Size
-        := Ada.Directories.Size (Filename);
+        := Ada.Directories.Size (File_Name);
       Current_Line : Positive := 1;
       Last_Pos : Stream_Element_Offset := 1;
       Modifier : Character;
@@ -1016,11 +1016,11 @@ package body Jintp is
       Input.Pos := 1;
       Input.Buffer := new Stream_Element_Array
         (1 .. Stream_Element_Offset (Input_Size));
-      Open (File, In_File, Filename);
+      Open (File, In_File, File_Name);
       Read (File, Input.Buffer.all,
             Stream_Element_Offset (Input_Size));
       Close (File);
-      Target.Filename := To_Unbounded_String (Filename);
+      Target.File_Name := To_Unbounded_String (File_Name);
       loop
          Find_Start (Kind, New_Pos, Modifier);
          if New_Pos <= Input.Buffer'Last then
@@ -1112,7 +1112,7 @@ package body Jintp is
                when E : Template_Error =>
                   Raise_With_Location (Message =>
                                           Ada.Exceptions.Exception_Message (E),
-                                       Filename => Filename,
+                                       File_Name => File_Name,
                                        Line => Line_Count + 1);
             end;
          else
@@ -1512,12 +1512,12 @@ package body Jintp is
       end case;
    end Append_Value;
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Resolver : aliased in out Context)
                     return Unbounded_String;
 
    function Render (Source : Template_Element_Vectors.Vector;
-                    Filename : String;
+                    File_Name : String;
                     Resolver : aliased in out Context)
                     return Unbounded_String is
       Out_Buffer : Unbounded_String;
@@ -1548,7 +1548,7 @@ package body Jintp is
             when E : Template_Error =>
                   Raise_With_Location (Message =>
                                           Ada.Exceptions.Exception_Message (E),
-                                       Filename => Filename,
+                                       File_Name => File_Name,
                                        Line => Element.Line);
          end;
          Next (Current);
@@ -1586,7 +1586,7 @@ package body Jintp is
       when E : Template_Error =>
          Raise_With_Location (Message =>
                                  Ada.Exceptions.Exception_Message (E),
-                              Filename => To_String (T.Filename),
+                              File_Name => To_String (T.File_Name),
                               Line => Current_Element.Line);
    end Execute_Block;
 
@@ -2589,7 +2589,7 @@ package body Jintp is
          raise Template_Error with "unbalanced 'for'";
    end Execute_For;
 
-   procedure Execute_Include (Filename : String;
+   procedure Execute_Include (File_Name : String;
                               Out_Buffer : in out Unbounded_String;
                               Resolver : aliased in out Context)
    is
@@ -2601,11 +2601,11 @@ package body Jintp is
       end if;
       begin
          Included_Template := new Template;
-         Get_Template (Filename, Included_Template.all, Get_Environment (Resolver).all);
+         Get_Template (File_Name, Included_Template.all, Get_Environment (Resolver).all);
       exception
          when Name_Error =>
             Free_Template (Included_Template);
-            raise Template_Error with "template not found: " & Filename;
+            raise Template_Error with "template not found: " & File_Name;
          when Constraint_Error =>
             Free_Template (Included_Template);
             raise Template_Error with "including a template twice is not supported";
@@ -2613,7 +2613,7 @@ package body Jintp is
             Free_Template (Included_Template);
             raise;
       end;
-      Resolver.Included_Templates.Insert (To_Unbounded_String (Filename),
+      Resolver.Included_Templates.Insert (To_Unbounded_String (File_Name),
                                           Included_Template);
       Current := First (Included_Template.Elements);
       Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
@@ -2657,21 +2657,21 @@ package body Jintp is
       Root_Context.Macros.Insert (Name, M);
    end Execute_Macro;
 
-   function Get_Template (Filename : String;
+   function Get_Template (File_Name : String;
                           Resolver : aliased in out Context)
                           return Template_Access is
       New_Template : Template_Access :=
-        Get_Environment (Resolver).Cached_Templates.Get (Filename);
+        Get_Environment (Resolver).Cached_Templates.Get (File_Name);
       File_Time : Time;
    begin
-      File_Time := Ada.Directories.Modification_Time (Filename);
+      File_Time := Ada.Directories.Modification_Time (File_Name);
       if New_Template = null or else File_Time > New_Template.Timestamp then
          begin
             New_Template := new Template;
             New_Template.Timestamp := File_Time;
-            Get_Template (Filename, New_Template.all, Get_Environment (Resolver).all);
+            Get_Template (File_Name, New_Template.all, Get_Environment (Resolver).all);
             Get_Environment (Resolver).Cached_Templates.Put
-              (Path     => Filename,
+              (Path     => File_Name,
                Template => New_Template,
                Max_Size => Get_Environment (Resolver).Max_Cache_Size,
                Inserted => New_Template.Cached);
@@ -2696,14 +2696,14 @@ package body Jintp is
       return 0;
    end Find;
 
-   procedure Execute_Import (Filename : String;
+   procedure Execute_Import (File_Name : String;
                              Variable_Name : Unbounded_String;
                              Resolver : aliased in out Context) is
       New_Template : Template_Access;
       Current : Template_Element_Vectors.Cursor;
       E : Template_Element;
    begin
-      New_Template := Get_Template (Filename, Resolver);
+      New_Template := Get_Template (File_Name, Resolver);
       Resolver.Imported_Templates.Insert (Variable_Name, New_Template);
       Current := First (New_Template.Elements);
       while Current /= Template_Element_Vectors.No_Element loop
@@ -2728,10 +2728,10 @@ package body Jintp is
          end if;
          raise Template_Error with "importing a template twice is not supported";
       when Name_Error =>
-         raise Template_Error with "template not found: " & Filename;
+         raise Template_Error with "template not found: " & File_Name;
    end Execute_Import;
 
-   procedure Execute_Import (Filename : String;
+   procedure Execute_Import (File_Name : String;
                              Variable_Names : String_Mapping_Vectors.Vector;
                              Resolver : aliased in out Context) is
       New_Template : Template_Access;
@@ -2740,9 +2740,9 @@ package body Jintp is
       Name_Index : Natural;
       Mapping : Name_Mapping;
    begin
-      New_Template := Get_Template (Filename, Resolver);
+      New_Template := Get_Template (File_Name, Resolver);
       Resolver.Imported_Templates.Insert
-        (To_Unbounded_String ("$") & Filename, New_Template);
+        (To_Unbounded_String ("$") & File_Name, New_Template);
       Current := First (New_Template.Elements);
       while Current /= Template_Element_Vectors.No_Element loop
          E := Template_Element_Vectors.Element (Current);
@@ -2773,7 +2773,7 @@ package body Jintp is
          end if;
          raise Template_Error with "importing a template twice is not supported";
       when Name_Error =>
-         raise Template_Error with "template not found: " & Filename;
+         raise Template_Error with "template not found: " & File_Name;
    end Execute_Import;
 
    procedure Find_Child_Block
@@ -2867,7 +2867,7 @@ package body Jintp is
                          Out_Buffer,
                          Resolver);
          when Include_Statement =>
-            Execute_Include (To_String (Stmt.Filename),
+            Execute_Include (To_String (Stmt.File_Name),
                              Out_Buffer,
                              Resolver);
          when Block_Statement =>
@@ -2880,11 +2880,11 @@ package body Jintp is
                            Current,
                            Resolver);
          when Import_Statement =>
-            Execute_Import (To_String (Stmt.Import_Filename),
+            Execute_Import (To_String (Stmt.Import_File_Name),
                             Stmt.Import_Variable_Name,
                             Resolver);
          when From_Import_Statement =>
-            Execute_Import (To_String (Stmt.From_Filename),
+            Execute_Import (To_String (Stmt.From_File_Name),
                             Stmt.Import_Variable_Names,
                             Resolver);
          when others =>
@@ -2931,17 +2931,17 @@ package body Jintp is
       return Left.Elements.Values = Right.Elements.Values;
    end "=";
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Resolver : aliased in out Context)
                     return Unbounded_String is
-      New_Template : Template_Access := Get_Template (Filename, Resolver);
+      New_Template : Template_Access := Get_Template (File_Name, Resolver);
    begin
       Add_Parent_Template (Resolver, New_Template);
       if not New_Template.Cached then
          declare
             Result : Unbounded_String;
          begin
-            Result := Render (New_Template.Elements, Filename, Resolver);
+            Result := Render (New_Template.Elements, File_Name, Resolver);
             Resolver.Template_Refs.Clear;
             Free_Template (New_Template);
             return Result;
@@ -2952,13 +2952,13 @@ package body Jintp is
                raise;
          end;
       end if;
-      return Render (New_Template.Elements, Filename, Resolver);
+      return Render (New_Template.Elements, File_Name, Resolver);
    exception
       when Name_Error =>
-         raise Template_Error with "template not found: " & Filename;
+         raise Template_Error with "template not found: " & File_Name;
    end Render;
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Values : Dictionary;
                     Settings : in out Environment'Class)
                     return Unbounded_String is
@@ -2974,7 +2974,7 @@ package body Jintp is
          Macros => Macro_Maps.Empty_Map,
          Imported_Templates => Template_Maps.Empty_Map);
    begin
-      return Render (Filename, Resolver);
+      return Render (File_Name, Resolver);
    exception
       when others =>
          for C in Resolver.Included_Templates.Iterate loop
@@ -2983,26 +2983,26 @@ package body Jintp is
          raise;
    end Render;
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Values : Dictionary;
                     Settings : in out Environment'Class)
                     return String is
    begin
-      return To_String (Render (Filename, Values, Settings));
+      return To_String (Render (File_Name, Values, Settings));
    end Render;
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Values : Dictionary)
                     return String is
    begin
-      return Render (Filename, Values, Default_Environment);
+      return Render (File_Name, Values, Default_Environment);
    end Render;
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Values : Dictionary)
                     return Unbounded_String is
    begin
-      return Render (Filename, Values, Default_Environment);
+      return Render (File_Name, Values, Default_Environment);
    end Render;
 
    procedure Insert (Container : in out Dictionary;

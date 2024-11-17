@@ -27,11 +27,11 @@ package Jintp is
 
    overriding function "=" (Left, Right : List) return Boolean;
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Values : Dictionary)
                     return String;
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Values : Dictionary)
                     return Unbounded_String;
 
@@ -46,12 +46,12 @@ package Jintp is
                         Trim_Blocks : Boolean := False;
                         Lstrip_Blocks : Boolean := False);
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Values : Dictionary;
                     Settings : in out Environment'Class)
                     return String;
 
-   function Render (Filename : String;
+   function Render (File_Name : String;
                     Values : Dictionary;
                     Settings : in out Environment'Class)
                     return Unbounded_String;
