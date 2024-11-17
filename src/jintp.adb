@@ -113,14 +113,14 @@ package body Jintp is
      Ada.Containers.Vectors (Index_Type => Positive,
                              Element_Type => Parameter);
 
-   type String_Mapping is record
+   type Name_Mapping is record
       Source : Unbounded_String;
       Target : Unbounded_String;
    end record;
 
    package String_Mapping_Vectors is new
      Ada.Containers.Vectors (Index_Type => Positive,
-                             Element_Type => String_Mapping);
+                             Element_Type => Name_Mapping);
 
    type Statement (Kind : Statement_Kind := If_Statement) is record
       case Kind is
@@ -2738,7 +2738,7 @@ package body Jintp is
       Current : Template_Element_Vectors.Cursor;
       E : Template_Element;
       Name_Index : Natural;
-      Mapping : String_Mapping;
+      Mapping : Name_Mapping;
    begin
       New_Template := Get_Template (Filename, Resolver);
       Resolver.Imported_Templates.Insert
