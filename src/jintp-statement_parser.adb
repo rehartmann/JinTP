@@ -87,6 +87,7 @@ package body Statement_Parser is
       Kind : Token_Kind;
       Parameters : Parameter_Vectors.Vector;
       Macro_Name : Unbounded_String;
+      Import_Variables : String_Mapping_Vectors.Vector;
    begin
       Next_Token (Scanner, Input, Current_Token, Settings);
       case Current_Token.Kind is
@@ -218,6 +219,46 @@ package body Statement_Parser is
                        Import_Filename => File_Name,
                        Import_Variable_Name => Current_Token.Identifier);
             Next_Token (Scanner, Input, Current_Token, Settings);
+         when From_Token =>
+            Next_Token (Scanner, Input, Current_Token, Settings);
+            if Current_Token.Kind /= String_Literal_Token then
+               raise Template_Error with "template name expected, got "
+                 & Current_Token.Kind'Image;
+            end if;
+            File_Name := Current_Token.String_Value;
+            Next_Token (Scanner, Input, Current_Token, Settings);
+            if Current_Token.Kind /= Import_Token then
+               raise Template_Error with "'import' expected, got "
+                 & Current_Token.Kind'Image;
+            end if;
+            loop
+               Next_Token (Scanner, Input, Current_Token, Settings);
+               if Current_Token.Kind /= Identifier_Token then
+                  raise Template_Error with "variable name expected, got "
+                    & Current_Token.Kind'Image;
+               end if;
+               Variable_Name := Current_Token.Identifier;
+               Next_Token (Scanner, Input, Current_Token, Settings);
+               if Current_Token.Kind = As_Token then
+                  Next_Token (Scanner, Input, Current_Token, Settings);
+                  if Current_Token.Kind /= Identifier_Token then
+                     raise Template_Error with "variable name expected, got "
+                       & Current_Token.Kind'Image;
+                  end if;
+                  Import_Variables.Append ((Source => Variable_Name,
+                                            Target => Current_Token.Identifier));
+                  Next_Token (Scanner, Input, Current_Token, Settings);
+               else
+                  Import_Variables.Append ((Source => Variable_Name,
+                                            Target => Null_Unbounded_String));
+               end if;
+               if Current_Token.Kind /= Comma_Token then
+                  exit;
+               end if;
+            end loop;
+            Result := (Kind => From_Import_Statement,
+                       From_Filename => File_Name,
+                       Import_Variable_Names => Import_Variables);
          when others =>
             raise Template_Error with "unexpected token "
               & Current_Token.Kind'Image;

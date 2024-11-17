@@ -94,7 +94,8 @@ package body Jintp is
                            Include_Statement, Macro_Statement,
                            Endmacro_Statement, Raw_Statement, Endraw_Statement,
                            Extends_Statement, Block_Statement,
-                           Endblock_Statement, Import_Statement);
+                           Endblock_Statement, Import_Statement,
+                           From_Import_Statement);
 
    type Parameter (Has_Default_Value : Boolean := False) is record
       Name : Unbounded_String;
@@ -111,6 +112,15 @@ package body Jintp is
    package Parameter_Vectors is new
      Ada.Containers.Vectors (Index_Type => Positive,
                              Element_Type => Parameter);
+
+   type String_Mapping is record
+      Source : Unbounded_String;
+      Target : Unbounded_String;
+   end record;
+
+   package String_Mapping_Vectors is new
+     Ada.Containers.Vectors (Index_Type => Positive,
+                             Element_Type => String_Mapping);
 
    type Statement (Kind : Statement_Kind := If_Statement) is record
       case Kind is
@@ -133,6 +143,9 @@ package body Jintp is
          when Import_Statement =>
             Import_Filename : Unbounded_String;
             Import_Variable_Name : Unbounded_String;
+         when From_Import_Statement =>
+            From_Filename : Unbounded_String;
+            Import_Variable_Names : String_Mapping_Vectors.Vector;
          when others =>
             null;
       end case;
@@ -2671,6 +2684,18 @@ package body Jintp is
       return New_Template;
    end Get_Template;
 
+   function Find (Source : String_Mapping_Vectors.Vector;
+                  Name : Unbounded_String)
+                  return Natural is
+   begin
+      for I in 1 .. String_Mapping_Vectors.Length (Source) loop
+         if String_Mapping_Vectors.Element (Source, Positive (I)).Source = Name then
+            return Natural (I);
+         end if;
+      end loop;
+      return 0;
+   end Find;
+
    procedure Execute_Import (Filename : String;
                              Variable_Name : Unbounded_String;
                              Resolver : aliased in out Context) is
@@ -2690,6 +2715,51 @@ package body Jintp is
                         E.Stmt.Macro_Parameters,
                         Current,
                         Resolver);
+         end if;
+         if Current = Template_Element_Vectors.No_Element then
+            exit;
+         end if;
+         Next (Current);
+      end loop;
+   exception
+      when Constraint_Error =>
+         if not New_Template.Cached then
+            Free_Template (New_Template);
+         end if;
+         raise Template_Error with "importing a template twice is not supported";
+      when Name_Error =>
+         raise Template_Error with "template not found: " & Filename;
+   end Execute_Import;
+
+   procedure Execute_Import (Filename : String;
+                             Variable_Names : String_Mapping_Vectors.Vector;
+                             Resolver : aliased in out Context) is
+      New_Template : Template_Access;
+      Current : Template_Element_Vectors.Cursor;
+      E : Template_Element;
+      Name_Index : Natural;
+      Mapping : String_Mapping;
+   begin
+      New_Template := Get_Template (Filename, Resolver);
+      Resolver.Imported_Templates.Insert
+        (To_Unbounded_String ("$") & Filename, New_Template);
+      Current := First (New_Template.Elements);
+      while Current /= Template_Element_Vectors.No_Element loop
+         E := Template_Element_Vectors.Element (Current);
+         if E.Kind = Statement_Element
+           and then E.Stmt.Kind = Macro_Statement
+         then
+            Name_Index := Find (Variable_Names, E.Stmt.Macro_Name);
+            if Name_Index /= 0 then
+               Mapping := String_Mapping_Vectors.Element (Variable_Names,
+                                                          Name_Index);
+               Execute_Macro
+                 ((if Mapping.Target = Null_Unbounded_String
+                   then E.Stmt.Macro_Name else Mapping.Target),
+                  E.Stmt.Macro_Parameters,
+                  Current,
+                  Resolver);
+            end if;
          end if;
          if Current = Template_Element_Vectors.No_Element then
             exit;
@@ -2813,8 +2883,12 @@ package body Jintp is
             Execute_Import (To_String (Stmt.Import_Filename),
                             Stmt.Import_Variable_Name,
                             Resolver);
+         when From_Import_Statement =>
+            Execute_Import (To_String (Stmt.From_Filename),
+                            Stmt.Import_Variable_Names,
+                            Resolver);
          when others =>
-            null;
+            raise Template_Error with "internal error: invalid statement";
       end case;
    end Execute_Statement;
 
