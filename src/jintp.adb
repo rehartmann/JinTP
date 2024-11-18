@@ -370,7 +370,7 @@ package body Jintp is
       Template_Refs : Template_Access_Vectors.Vector; -- For template inheritance
       Template_Index : Positive;
       Block_Name : Unbounded_String;
-      Included_Templates : Template_Maps.Map;
+      Included_Templates : Template_Access_Vectors.Vector;
       Macros : Macro_Maps.Map;
       Imported_Templates : Template_Maps.Map;
    end record;
@@ -2613,8 +2613,7 @@ package body Jintp is
             Free_Template (Included_Template);
             raise;
       end;
-      Resolver.Included_Templates.Insert (To_Unbounded_String (File_Name),
-                                          Included_Template);
+      Resolver.Included_Templates.Append (Included_Template);
       Current := First (Included_Template.Elements);
       Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
    end Execute_Include;
@@ -2970,15 +2969,15 @@ package body Jintp is
          Block_Name => Null_Unbounded_String,
          Values => Values,
          Parent_Resolver => null,
-         Included_Templates => Template_Maps.Empty_Map,
+         Included_Templates => Template_Access_Vectors.Empty_Vector,
          Macros => Macro_Maps.Empty_Map,
          Imported_Templates => Template_Maps.Empty_Map);
    begin
       return Render (File_Name, Resolver);
    exception
       when others =>
-         for C in Resolver.Included_Templates.Iterate loop
-            Free_Template (Resolver.Included_Templates (C));
+         for E of Resolver.Included_Templates loop
+            Free_Template (E);
          end loop;
          raise;
    end Render;
