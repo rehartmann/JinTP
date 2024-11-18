@@ -372,7 +372,7 @@ package body Jintp is
       Block_Name : Unbounded_String;
       Included_Templates : Template_Access_Vectors.Vector;
       Macros : Macro_Maps.Map;
-      Imported_Templates : Template_Maps.Map;
+      Imported_Templates : Template_Access_Vectors.Vector;
    end record;
 
    overriding procedure Finalize (Self : in out Context);
@@ -661,14 +661,14 @@ package body Jintp is
       end loop;
       Self.Macros.Clear;
 
-      for C in Self.Included_Templates.Iterate loop
-         Free_Template (Self.Included_Templates (C));
+      for E of Self.Included_Templates loop
+         Free_Template (E);
       end loop;
       Self.Included_Templates.Clear;
 
-      for C in Self.Imported_Templates.Iterate loop
-         if not Self.Imported_Templates (C).Cached then
-            Free_Template (Self.Imported_Templates (C));
+      for E of Self.Imported_Templates loop
+         if not E.Cached then
+            Free_Template (E);
          end if;
       end loop;
       Self.Imported_Templates.Clear;
@@ -2703,7 +2703,7 @@ package body Jintp is
       E : Template_Element;
    begin
       New_Template := Get_Template (File_Name, Resolver);
-      Resolver.Imported_Templates.Insert (Variable_Name, New_Template);
+      Resolver.Imported_Templates.Append (New_Template);
       Current := First (New_Template.Elements);
       while Current /= Template_Element_Vectors.No_Element loop
          E := Template_Element_Vectors.Element (Current);
@@ -2740,8 +2740,7 @@ package body Jintp is
       Mapping : Name_Mapping;
    begin
       New_Template := Get_Template (File_Name, Resolver);
-      Resolver.Imported_Templates.Insert
-        (To_Unbounded_String ("$") & File_Name, New_Template);
+      Resolver.Imported_Templates.Append (New_Template);
       Current := First (New_Template.Elements);
       while Current /= Template_Element_Vectors.No_Element loop
          E := Template_Element_Vectors.Element (Current);
@@ -2971,7 +2970,7 @@ package body Jintp is
          Parent_Resolver => null,
          Included_Templates => Template_Access_Vectors.Empty_Vector,
          Macros => Macro_Maps.Empty_Map,
-         Imported_Templates => Template_Maps.Empty_Map);
+         Imported_Templates => Template_Access_Vectors.Empty_Vector);
    begin
       return Render (File_Name, Resolver);
    exception
