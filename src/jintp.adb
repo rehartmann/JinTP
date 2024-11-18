@@ -924,7 +924,7 @@ package body Jintp is
          return Slice;
       end Buffer_Slice;
 
-      procedure SkipLinebreak is
+      procedure Skip_Linebreak is
       begin
          if Input.Pos <= Input.Buffer'Last
            and then Character'Val (Input.Buffer (Input.Pos)) = ASCII.LF
@@ -936,7 +936,7 @@ package body Jintp is
          then
             Input.Pos := Input.Pos + 2;
          end if;
-      end SkipLinebreak;
+      end Skip_Linebreak;
 
       procedure Skip_Comment is
          New_Pos : Stream_Element_Offset;
@@ -946,7 +946,7 @@ package body Jintp is
             Input.Pos := New_Pos
               + Stream_Element_Offset (Length (Settings.Comment_End));
             if Settings.Trim_Blocks then
-               SkipLinebreak;
+               Skip_Linebreak;
             end if;
          end if;
       end Skip_Comment;
@@ -1079,7 +1079,7 @@ package body Jintp is
                                                              Input.Pos - 1);
                   if Settings.Trim_Blocks and then Modifier /= '+'
                   then
-                     SkipLinebreak;
+                     Skip_Linebreak;
                   end if;
                   Last_Pos := Input.Pos;
                   if New_Statement.Kind = Raw_Statement then
@@ -1116,12 +1116,24 @@ package body Jintp is
                                        Line => Line_Count + 1);
             end;
          else
+            Last_Pos := Input.Buffer'Last;
+            if Last_Pos > Input.Buffer'First
+              and then Character'Val (Input.Buffer (Last_Pos)) = ASCII.LF
+            then
+               Last_Pos := Last_Pos - 1;
+               if Last_Pos > Input.Buffer'First
+                 and then Character'Val (Input.Buffer (Last_Pos)) = ASCII.CR
+               then
+                  Last_Pos := Last_Pos - 1;
+               end if;
+            end if;
+
             New_Expression := new Expression'
               (Kind => Literal,
                Value => (Kind => String_Expression_Value,
                          S => Buffer_Slice (
-                         Input.Pos,
-                         Input.Buffer'Last)
+                           Input.Pos,
+                           Last_Pos)
                         )
               );
             Target.Elements.Append ((Line => Current_Line,
