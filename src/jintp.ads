@@ -216,7 +216,7 @@ private
 
    type Template_Access is access Template;
 
-   package Template_Maps is new
+   package Template_Access_Maps is new
      Ada.Containers.Hashed_Maps (Key_Type => Unbounded_String,
                                  Element_Type => Template_Access,
                                  Hash => Ada.Strings.Unbounded.Hash,
@@ -231,7 +231,8 @@ private
       function Size return Natural;
       procedure Cleanup;
    private
-      Templates_Map : Template_Maps.Map := Template_Maps.Empty_Map;
+      Templates_Map : Template_Access_Maps.Map
+        := Template_Access_Maps.Empty_Map;
    end Template_Cache;
 
    package Filter_Maps is new

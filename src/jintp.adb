@@ -20,7 +20,7 @@ package body Jintp is
    use Ada.Calendar;
    use Ada.Containers;
    use Ada.Strings;
-   use Template_Maps;
+   use Template_Access_Maps;
 
    type Value_Kind is (String_Expression_Value, Boolean_Expression_Value,
                        Integer_Expression_Value, Float_Expression_Value,
@@ -676,10 +676,10 @@ package body Jintp is
 
    protected body Template_Cache is
       function Get (Path : String) return Template_Access is
-         C : constant Template_Maps.Cursor
+         C : constant Template_Access_Maps.Cursor
            := Templates_Map.Find (To_Unbounded_String (Path));
       begin
-         if C = Template_Maps.No_Element then
+         if C = Template_Access_Maps.No_Element then
             return null;
          end if;
          return Templates_Map (C);
@@ -689,7 +689,7 @@ package body Jintp is
                      Template : Template_Access;
                      Max_Size : Natural;
                      Inserted : out Boolean) is
-         Position : Template_Maps.Cursor;
+         Position : Template_Access_Maps.Cursor;
          Insert_Succeeded : Boolean;
       begin
          if Natural (Templates_Map.Length) >= Max_Size then
