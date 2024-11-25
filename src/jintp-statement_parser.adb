@@ -87,7 +87,7 @@ package body Statement_Parser is
       Kind : Token_Kind;
       Parameters : Parameter_Vectors.Vector;
       Macro_Name : Unbounded_String;
-      Import_Variables : String_Mapping_Vectors.Vector;
+      Import_Variables : Name_Mapping_Vectors.Vector;
    begin
       Next_Token (Scanner, Input, Current_Token, Settings);
       case Current_Token.Kind is

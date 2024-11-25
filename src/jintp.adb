@@ -118,7 +118,7 @@ package body Jintp is
       Target : Unbounded_String;
    end record;
 
-   package String_Mapping_Vectors is new
+   package Name_Mapping_Vectors is new
      Ada.Containers.Vectors (Index_Type => Positive,
                              Element_Type => Name_Mapping);
 
@@ -145,7 +145,7 @@ package body Jintp is
             Import_Variable_Name : Unbounded_String;
          when From_Import_Statement =>
             From_File_Name : Unbounded_String;
-            Import_Variable_Names : String_Mapping_Vectors.Vector;
+            Import_Variable_Names : Name_Mapping_Vectors.Vector;
          when others =>
             null;
       end case;
@@ -2695,12 +2695,12 @@ package body Jintp is
       return New_Template;
    end Get_Template;
 
-   function Find (Source : String_Mapping_Vectors.Vector;
+   function Find (Source : Name_Mapping_Vectors.Vector;
                   Name : Unbounded_String)
                   return Natural is
    begin
-      for I in 1 .. String_Mapping_Vectors.Length (Source) loop
-         if String_Mapping_Vectors.Element (Source, Positive (I)).Source = Name then
+      for I in 1 .. Name_Mapping_Vectors.Length (Source) loop
+         if Name_Mapping_Vectors.Element (Source, Positive (I)).Source = Name then
             return Natural (I);
          end if;
       end loop;
@@ -2743,7 +2743,7 @@ package body Jintp is
    end Execute_Import;
 
    procedure Execute_Import (File_Name : String;
-                             Variable_Names : String_Mapping_Vectors.Vector;
+                             Variable_Names : Name_Mapping_Vectors.Vector;
                              Resolver : aliased in out Context) is
       New_Template : Template_Access;
       Current : Template_Element_Vectors.Cursor;
@@ -2761,7 +2761,7 @@ package body Jintp is
          then
             Name_Index := Find (Variable_Names, E.Stmt.Macro_Name);
             if Name_Index /= 0 then
-               Mapping := String_Mapping_Vectors.Element (Variable_Names,
+               Mapping := Name_Mapping_Vectors.Element (Variable_Names,
                                                           Name_Index);
                Execute_Macro
                  ((if Mapping.Target = Null_Unbounded_String
