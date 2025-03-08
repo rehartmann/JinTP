@@ -3071,6 +3071,7 @@ package body Jintp is
                      Key : Unbounded_String;
                      New_Item : Boolean) is
    begin
+      Init (Container);
       Include (Container.Assocs.Value_Assocs,
               (Kind => String_Expression_Value,
                S => Key),
