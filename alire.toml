@@ -1,6 +1,6 @@
 name = "jintp"
 description = "Template parser in Ada based on Jinja2"
-version = "0.2.0"
+version = "0.3.0-dev"
 
 authors = ["Rene Hartmann"]
 maintainers = ["Rene Hartmann <rhartmann@users.sourceforge.net>"]
