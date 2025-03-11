@@ -85,8 +85,16 @@ package Jintp is
                      New_Item : Unbounded_String);
 
    procedure Insert (Container : in out Dictionary;
+                     Key : String;
+                     New_Item : Long_Float);
+
+   procedure Insert (Container : in out Dictionary;
                      Key : Unbounded_String;
                      New_Item : Unbounded_String);
+
+   procedure Insert (Container : in out Dictionary;
+                     Key : Unbounded_String;
+                     New_Item : Long_Float);
 
    procedure Insert (Container : in out Dictionary;
                      Key : String;
@@ -141,6 +149,10 @@ package Jintp is
    procedure Insert (Container : in out Dictionary;
                      Key : Integer;
                      New_Item : Unbounded_String);
+
+   procedure Insert (Container : in out Dictionary;
+                     Key : Integer;
+                     New_Item : Long_Float);
 
    procedure Insert (Container : in out Dictionary;
                      Key : Integer;

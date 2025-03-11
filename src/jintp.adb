@@ -3023,6 +3023,14 @@ package body Jintp is
    end Insert;
 
    procedure Insert (Container : in out Dictionary;
+                     Key : String;
+                     New_Item : Long_Float) is
+   begin
+      Insert (Container, To_Unbounded_String (Key), New_Item);
+   end Insert;
+
+
+   procedure Insert (Container : in out Dictionary;
                      Key : Unbounded_String;
                      New_Item : Unbounded_String) is
    begin
@@ -3032,6 +3040,18 @@ package body Jintp is
                S => Key),
               (Kind => String_Expression_Value,
                S => New_Item));
+   end Insert;
+
+   procedure Insert (Container : in out Dictionary;
+                     Key : Unbounded_String;
+                     New_Item : Long_Float) is
+   begin
+      Init (Container);
+      Include (Container.Assocs.Value_Assocs,
+              (Kind => String_Expression_Value,
+               S => Key),
+              (Kind => Float_Expression_Value,
+               F => New_Item));
    end Insert;
 
    procedure Insert (Container : in out Dictionary;
@@ -3248,6 +3268,18 @@ package body Jintp is
                I => Key),
               (Kind => String_Expression_Value,
                S => New_Item));
+   end Insert;
+
+   procedure Insert (Container : in out Dictionary;
+                     Key : Integer;
+                     New_Item : Long_Float) is
+   begin
+      Init (Container);
+      Include (Container.Assocs.Value_Assocs,
+              (Kind => Integer_Expression_Value,
+               I => Key),
+              (Kind => Float_Expression_Value,
+               F => New_Item));
    end Insert;
 
    procedure Insert (Container : in out Dictionary;
