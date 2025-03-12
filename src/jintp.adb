@@ -1950,11 +1950,13 @@ package body Jintp is
       end if;
       if Source.Name = "even" then
          return (Kind => Boolean_Expression_Value,
-                 B => Source_Value.I mod 2 = 0);
+                 B => Source_Value.Kind = Integer_Expression_Value
+                      and then Source_Value.I mod 2 = 0);
       end if;
       if Source.Name = "odd" then
          return (Kind => Boolean_Expression_Value,
-                 B => Source_Value.I mod 2 = 1);
+                 B => Source_Value.Kind = Integer_Expression_Value
+                      and then Source_Value.I mod 2 = 1);
       end if;
       if Source.Name = "float" then
          return (Kind => Boolean_Expression_Value,
