@@ -1484,7 +1484,7 @@ package body Jintp is
       if not Is_Numeric (Left_Arg.Kind) or else not Is_Numeric (Right_Arg.Kind)
       then
          raise Template_Error with
-           "arguments of * operator must both be numeric";
+           "arguments of ** operator must both be numeric";
       end if;
       return (Kind => Float_Expression_Value,
               F => To_Float (Left_Arg) ** To_Float (Right_Arg));
