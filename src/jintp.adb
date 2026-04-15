@@ -1,3 +1,4 @@
+pragma Style_Checks ("M120");
 with Ada.Containers.Vectors;
 with Ada.Streams;
 with Ada.Streams.Stream_IO;
@@ -629,7 +630,7 @@ package body Jintp is
    end Set_Current_Block_Name;
 
    function Evaluate (Source : Expression;
-                      Resolver : aliased in out Context)
+                      Resolver : in out Context)
                       return Expression_Value;
 
    package Statement_Parser is
@@ -1251,7 +1252,7 @@ package body Jintp is
    end "<";
 
    function Evaluate (Source : Expression;
-                      Resolver : aliased in out Context)
+                      Resolver : in out Context)
                       return String;
 
    function To_Float (V : Expression_Value) return Long_Float is
@@ -1267,7 +1268,7 @@ package body Jintp is
 
       function Evaluate_Filter
         (Source : Expression;
-         Resolver : aliased in out Context)
+         Resolver : in out Context)
       return Jintp.Expression_Value;
 
    end Filters;
@@ -1334,7 +1335,7 @@ package body Jintp is
    end Is_Numeric;
 
    function Evaluate_Add (Source : Expression;
-                          Resolver : aliased in out Context)
+                          Resolver : in out Context)
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1368,7 +1369,7 @@ package body Jintp is
    end Evaluate_Add;
 
    function Evaluate_Subtract (Source : Expression;
-                               Resolver : aliased in out Context)
+                               Resolver : in out Context)
                                return Expression_Value
    is
       Left_Arg : constant Expression_Value := Evaluate
@@ -1406,7 +1407,7 @@ package body Jintp is
    end Evaluate_Subtract;
 
    function Evaluate_Mul (Source : Expression;
-                          Resolver : aliased in out Context)
+                          Resolver : in out Context)
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1430,7 +1431,7 @@ package body Jintp is
    end Evaluate_Mul;
 
    function Evaluate_Div (Source : Expression;
-                          Resolver : aliased in out Context)
+                          Resolver : in out Context)
                           return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1449,7 +1450,7 @@ package body Jintp is
    end Evaluate_Div;
 
    function Evaluate_Integer_Div (Source : Expression;
-                                  Resolver : aliased in out Context)
+                                  Resolver : in out Context)
                                   return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1473,7 +1474,7 @@ package body Jintp is
    use Long_Float_Elementary_Functions;
 
    function Evaluate_Power (Source : Expression;
-                            Resolver : aliased in out Context)
+                            Resolver : in out Context)
                             return Expression_Value
    is
       Left_Arg : constant Expression_Value
@@ -1494,11 +1495,11 @@ package body Jintp is
      (Stmt : Statement;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : aliased in out Context);
+      Resolver : in out Context);
 
    procedure Append_Value (Target : in out Unbounded_String;
                            Source : Expression;
-                           Resolver : aliased in out Context) is
+                           Resolver : in out Context) is
    begin
       case Source.Kind is
          when Literal =>
@@ -1525,12 +1526,12 @@ package body Jintp is
    end Append_Value;
 
    function Render (File_Name : String;
-                    Resolver : aliased in out Context)
+                    Resolver : in out Context)
                     return Unbounded_String;
 
    function Render (Source : Template_Element_Vectors.Vector;
                     File_Name : String;
-                    Resolver : aliased in out Context)
+                    Resolver : in out Context)
                     return Unbounded_String is
       Out_Buffer : Unbounded_String;
       Current : Template_Element_Vectors.Cursor := First (Source);
@@ -1571,7 +1572,7 @@ package body Jintp is
    procedure Execute_Block (Start_Index : Positive;
                             T : Template;
                             Out_Buffer : in out Unbounded_String;
-                            Resolver : aliased in out Context) is
+                            Resolver : in out Context) is
       Position : Template_Element_Vectors.Cursor
         := T.Elements.To_Cursor (Start_Index + 1);
       Current_Element : Template_Element;
@@ -1602,7 +1603,7 @@ package body Jintp is
                               Line => Current_Element.Line);
    end Execute_Block;
 
-   function Evaluate_Super (Resolver : aliased in out Context;
+   function Evaluate_Super (Resolver : in out Context;
                             Level : Positive)
                             return Unbounded_String
    is
@@ -1631,7 +1632,7 @@ package body Jintp is
 
    function Evaluate_Operator
      (Source : Expression;
-      Resolver : aliased in out Context)
+      Resolver : in out Context)
       return Expression_Value
      with Pre => Source.Kind in Operator_Super .. Operator_Macro
    is
@@ -1891,7 +1892,7 @@ package body Jintp is
 
    function Evaluate_Test
      (Source : Expression;
-      Resolver : aliased in out Context)
+      Resolver : in out Context)
       return Expression_Value
    is
       Source_Value : Expression_Value;
@@ -2017,7 +2018,7 @@ package body Jintp is
    end Evaluate_Test;
 
    function Evaluate (Source : Expression;
-                      Resolver : aliased in out Context)
+                      Resolver : in out Context)
                       return Expression_Value is
    begin
       case Source.Kind is
@@ -2035,7 +2036,7 @@ package body Jintp is
    end Evaluate;
 
    function Evaluate (Source : Expression;
-                      Resolver : aliased in out Context)
+                      Resolver : in out Context)
                       return String
    is
    begin
@@ -2067,7 +2068,7 @@ package body Jintp is
    procedure Process_Control_Block_Elements
      (Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : aliased in out Context)
+      Resolver : in out Context)
    is
       Current_Element : Template_Element;
    begin
@@ -2126,7 +2127,7 @@ package body Jintp is
    end Skip_Control_Block_Elements;
 
    function Evaluate_Boolean (Source : Expression;
-                              Resolver : aliased in out Context)
+                              Resolver : in out Context)
                               return Boolean is
       Result_Value : constant Expression_Value := Evaluate (Source, Resolver);
    begin
@@ -2140,7 +2141,7 @@ package body Jintp is
      (Condition : Expression;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : aliased in out Context)
+      Resolver : in out Context)
    is
       Condition_Value : constant Boolean := Evaluate_Boolean
         (Condition, Resolver);
@@ -2244,7 +2245,7 @@ package body Jintp is
       Condition : Expression_Access;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : aliased in out Context)
+      Resolver : in out Context)
    is
       Start_Cursor : constant Template_Element_Vectors.Cursor := Current;
       Loop_Resolver : aliased Context;
@@ -2306,7 +2307,7 @@ package body Jintp is
       end Execute_For_Items;
 
       procedure Process_Control_Block_Elements
-        (Resolver : aliased in out Context)
+        (Resolver : in out Context)
       is
       begin
          Current := Start_Cursor;
@@ -2607,7 +2608,7 @@ package body Jintp is
 
    procedure Execute_Include (File_Name : String;
                               Out_Buffer : in out Unbounded_String;
-                              Resolver : aliased in out Context)
+                              Resolver : in out Context)
    is
       Included_Template : Template_Access;
       Current : Template_Element_Vectors.Cursor;
@@ -2637,7 +2638,7 @@ package body Jintp is
    procedure Execute_Macro (Name : Unbounded_String;
                             Parameters : Parameter_Vectors.Vector;
                             Current : in out Template_Element_Vectors.Cursor;
-                            Resolver : aliased in out Context)
+                            Resolver : in out Context)
    is
       Position : Macro_Maps.Cursor;
       M : Macro_Access;
@@ -2673,7 +2674,7 @@ package body Jintp is
    end Execute_Macro;
 
    function Get_Template (File_Name : String;
-                          Resolver : aliased in out Context)
+                          Resolver : in out Context)
                           return Template_Access is
       New_Template : Template_Access :=
         Get_Environment (Resolver).Cached_Templates.Get (File_Name);
@@ -2713,7 +2714,7 @@ package body Jintp is
 
    procedure Execute_Import (File_Name : String;
                              Variable_Name : Unbounded_String;
-                             Resolver : aliased in out Context) is
+                             Resolver : in out Context) is
       New_Template : Template_Access;
       Current : Template_Element_Vectors.Cursor;
       E : Template_Element;
@@ -2748,7 +2749,7 @@ package body Jintp is
 
    procedure Execute_Import (File_Name : String;
                              Variable_Names : Name_Mapping_Vectors.Vector;
-                             Resolver : aliased in out Context) is
+                             Resolver : in out Context) is
       New_Template : Template_Access;
       Current : Template_Element_Vectors.Cursor;
       E : Template_Element;
@@ -2821,7 +2822,7 @@ package body Jintp is
      (Stmt : Statement;
       Current : in out Template_Element_Vectors.Cursor;
       Out_Buffer : in out Unbounded_String;
-      Resolver : aliased in out Context) is
+      Resolver : in out Context) is
 
       procedure Replace_Block is
          Current_Element : Template_Element;
@@ -2946,7 +2947,7 @@ package body Jintp is
    end "=";
 
    function Render (File_Name : String;
-                    Resolver : aliased in out Context)
+                    Resolver : in out Context)
                     return Unbounded_String is
       New_Template : Template_Access := Get_Template (File_Name, Resolver);
    begin

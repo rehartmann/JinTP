@@ -135,7 +135,7 @@ package body Filters is
    end Is_Empty_Line;
 
    function Evaluate_Filter (Source : Expression;
-                             Resolver : aliased in out Context)
+                             Resolver : in out Context)
                              return Expression_Value is
 
       function Evaluate_Batch return Expression_Value is
