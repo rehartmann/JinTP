@@ -9,26 +9,25 @@ package body Expression_Parser is
    use Jintp.Scanner;
 
    function Parse_Primitive
-     (Scanner : in out Scanner_State;
-      Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment'Class)
-      return Jintp.Expression_Access;
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access;
 
    function Parse_List
-     (Scanner : in out Scanner_State;
-      Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment'Class)
-      return Jintp.Expression_Access
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
    is
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
-      Result : Jintp.Expression_Access;
+      Result        : Jintp.Expression_Access;
    begin
-      Result := new Expression'
-        (Kind => Literal,
-         Value => (Kind => List_Expression_Value,
-                   List_Value => (Ada.Finalization.Controlled
-                                  with Elements => null))
-        );
+      Result :=
+        new Expression'
+          (Kind  => Literal,
+           Value =>
+             (Kind       => List_Expression_Value,
+              List_Value =>
+                (Ada.Finalization.Controlled with Elements => null)));
       Init (Result.Value.List_Value);
       Next_Token (Scanner, Input, Current_Token, Settings);
       if Current_Token.Kind = Right_Bracket_Token then
@@ -37,16 +36,15 @@ package body Expression_Parser is
       end if;
       loop
          declare
-            New_Element : Expression_Access := Parse_Primitive (Scanner,
-                                                                Input,
-                                                                Settings);
+            New_Element : Expression_Access :=
+              Parse_Primitive (Scanner, Input, Settings);
          begin
             if New_Element.Kind /= Literal then
                Delete_Expression (New_Element);
                raise Template_Error with "literal expected";
             end if;
-            Append (Result.Value.List_Value.Elements.Values,
-                    New_Element.Value);
+            Append
+              (Result.Value.List_Value.Elements.Values, New_Element.Value);
             Delete_Expression (New_Element);
          end;
          Current_Token := Jintp.Scanner.Current_Token (Scanner);
@@ -54,8 +52,8 @@ package body Expression_Parser is
             exit;
          end if;
          if Current_Token.Kind /= Comma_Token then
-            raise Template_Error with "']' or ',' expected, read "
-              & Current_Token.Kind'Image;
+            raise Template_Error
+              with "']' or ',' expected, read " & Current_Token.Kind'Image;
          end if;
          Next_Token (Scanner, Input, Current_Token, Settings);
       end loop;
@@ -68,20 +66,20 @@ package body Expression_Parser is
    end Parse_List;
 
    function Parse_Dictionary
-     (Scanner : in out Scanner_State;
-      Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment'Class)
-      return Jintp.Expression_Access
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
    is
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
-      Result : Jintp.Expression_Access;
+      Result        : Jintp.Expression_Access;
    begin
-      Result := new Expression'
-        (Kind => Literal,
-         Value => (Kind => Dictionary_Expression_Value,
-                   Dictionary_Value => (Ada.Finalization.Controlled
-                                        with Assocs => null))
-        );
+      Result :=
+        new Expression'
+          (Kind  => Literal,
+           Value =>
+             (Kind             => Dictionary_Expression_Value,
+              Dictionary_Value =>
+                (Ada.Finalization.Controlled with Assocs => null)));
       Init (Result.Value.Dictionary_Value);
       Next_Token (Scanner, Input, Current_Token, Settings);
       if Current_Token.Kind = Right_Brace_Token then
@@ -90,7 +88,7 @@ package body Expression_Parser is
       end if;
       loop
          declare
-            New_Key : Expression_Access := null;
+            New_Key     : Expression_Access := null;
             New_Element : Expression_Access := null;
          begin
             New_Key := Parse_Primitive (Scanner, Input, Settings);
@@ -118,8 +116,8 @@ package body Expression_Parser is
             exit;
          end if;
          if Current_Token.Kind /= Comma_Token then
-            raise Template_Error with "'}' or ',' expected, got "
-              & Current_Token.Kind'Image;
+            raise Template_Error
+              with "'}' or ',' expected, got " & Current_Token.Kind'Image;
          end if;
          Next_Token (Scanner, Input, Current_Token, Settings);
       end loop;
@@ -131,8 +129,8 @@ package body Expression_Parser is
          raise;
    end Parse_Dictionary;
 
-   function To_Array (Arguments : Named_Argument_Vectors.Vector)
-                      return Expression_Access_Array
+   function To_Array
+     (Arguments : Named_Argument_Vectors.Vector) return Expression_Access_Array
    is
       Result : Expression_Access_Array (1 .. Argument_Capacity);
    begin
@@ -145,113 +143,123 @@ package body Expression_Parser is
          raise Template_Error with "too many arguments";
    end To_Array;
 
-   function To_Vector (Left : Expression_Access;
-                       Right : Expression_Access := null)
-                      return Named_Argument_Vectors.Vector
+   function To_Vector
+     (Left : Expression_Access; Right : Expression_Access := null)
+      return Named_Argument_Vectors.Vector
    is
       Result : Named_Argument_Vectors.Vector;
    begin
-      Result.Append ((Name => Null_Unbounded_String,
-                      Argument => Left));
+      Result.Append ((Name => Null_Unbounded_String, Argument => Left));
       if Right /= null then
-         Result.Append ((Name => Null_Unbounded_String,
-                         Argument => Right));
+         Result.Append ((Name => Null_Unbounded_String, Argument => Right));
       end if;
       return Result;
    end To_Vector;
 
    procedure Parse_Named_Arguments
-     (Scanner : in out Scanner_State;
-      Input : in out Jintp.Input.Character_Iterator'Class;
-      Arguments : out Named_Argument_Vectors.Vector;
-      Settings : Environment'Class;
+     (Scanner                     : in out Scanner_State;
+      Input                       :
+        in out Jintp.Input.Character_Iterator'Class;
+      Arguments                   : out Named_Argument_Vectors.Vector;
+      Settings                    : Environment'Class;
       Named_Arguments_All_Or_None : Boolean := True);
 
    function Parse_Primitive
-     (Scanner : in out Scanner_State;
-      Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment'Class)
-      return Jintp.Expression_Access
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
    is
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
-      Result : Jintp.Expression_Access;
-      Name : Unbounded_String;
-      Arguments : Named_Argument_Vectors.Vector;
+      Result        : Jintp.Expression_Access;
+      Name          : Unbounded_String;
+      Arguments     : Named_Argument_Vectors.Vector;
    begin
       case Current_Token.Kind is
-         when Identifier_Token =>
+         when Identifier_Token      =>
             Name := Current_Token.Identifier;
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind = Left_Paren_Token then
-               Parse_Named_Arguments (Scanner, Input, Arguments, Settings,
-                                      False);
+               Parse_Named_Arguments
+                 (Scanner, Input, Arguments, Settings, False);
                if Name = "super" then
-                  Result := new Expression'(Kind => Operator_Super,
-                                            Named_Arguments => Arguments);
+                  Result :=
+                    new Expression'
+                      (Kind => Operator_Super, Named_Arguments => Arguments);
                else
-                  Result := new Expression'
-                    (Kind => Operator_Macro,
-                     Macro_Variable_Name => Null_Unbounded_String,
-                     Macro_Name => Name,
-                     Macro_Arguments => Arguments);
+                  Result :=
+                    new Expression'
+                      (Kind                => Operator_Macro,
+                       Macro_Variable_Name => Null_Unbounded_String,
+                       Macro_Name          => Name,
+                       Macro_Arguments     => Arguments);
                end if;
             else
-               Result := new Expression'(Kind => Variable,
-                                         Variable_Name => Name);
+               Result :=
+                 new Expression'(Kind => Variable, Variable_Name => Name);
             end if;
-         when String_Literal_Token =>
-            Result := new Expression'
-              (Kind => Literal,
-               Value => (Kind => String_Expression_Value,
-                         S => Current_Token.String_Value
-                        )
-              );
+
+         when String_Literal_Token  =>
+            Result :=
+              new Expression'
+                (Kind  => Literal,
+                 Value =>
+                   (Kind => String_Expression_Value,
+                    S    => Current_Token.String_Value));
             Next_Token (Scanner, Input, Current_Token, Settings);
+
          when Boolean_Literal_Token =>
-            Result := new Expression'
-              (Kind => Literal,
-               Value => (Kind => Boolean_Expression_Value,
-                         B => Current_Token.Boolean_Value
-                        )
-              );
+            Result :=
+              new Expression'
+                (Kind  => Literal,
+                 Value =>
+                   (Kind => Boolean_Expression_Value,
+                    B    => Current_Token.Boolean_Value));
             Next_Token (Scanner, Input, Current_Token, Settings);
+
          when Integer_Literal_Token =>
-            Result := new Expression'
-              (Kind => Literal,
-               Value => (Kind => Integer_Expression_Value,
-                         I => Current_Token.Integer_Value
-                        )
-              );
+            Result :=
+              new Expression'
+                (Kind  => Literal,
+                 Value =>
+                   (Kind => Integer_Expression_Value,
+                    I    => Current_Token.Integer_Value));
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Float_Literal_Token =>
-            Result := new Expression'
-              (Kind => Literal,
-               Value => (Kind => Float_Expression_Value,
-                         F => Current_Token.Float_Value
-                        )
-              );
+
+         when Float_Literal_Token   =>
+            Result :=
+              new Expression'
+                (Kind  => Literal,
+                 Value =>
+                   (Kind => Float_Expression_Value,
+                    F    => Current_Token.Float_Value));
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Left_Paren_Token =>
+
+         when Left_Paren_Token      =>
             Next_Token (Scanner, Input, Current_Token, Settings);
             Result := Parse (Scanner, Input, Settings);
             if Jintp.Scanner.Current_Token (Scanner).Kind /= Right_Paren_Token
             then
-               raise Template_Error with "')' expected, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with "')' expected, got " & Current_Token.Kind'Image;
             end if;
             Next_Token (Scanner, Input, Current_Token, Settings);
             return Result;
-         when Left_Bracket_Token =>
+
+         when Left_Bracket_Token    =>
             return Parse_List (Scanner, Input, Settings);
-         when Left_Brace_Token =>
+
+         when Left_Brace_Token      =>
             return Parse_Dictionary (Scanner, Input, Settings);
-         when others =>
-            raise Template_Error with
-              "identifier, literal, '(', '[', or '{' expected, got "
-              & Current_Token.Kind'Image;
+
+         when others                =>
+            raise Template_Error
+              with
+                "identifier, literal, '(', '[', or '{' expected, got "
+                & Current_Token.Kind'Image;
       end case;
       while Current_Token.Kind = Period_Token
-        or else Current_Token.Kind = Left_Bracket_Token loop
+        or else Current_Token.Kind = Left_Bracket_Token
+      loop
          if Current_Token.Kind = Period_Token then
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= Identifier_Token then
@@ -262,26 +270,26 @@ package body Expression_Parser is
             begin
                Next_Token (Scanner, Input, Current_Token, Settings);
                if Current_Token.Kind = Left_Paren_Token then
-                  Parse_Named_Arguments (Scanner, Input, Arguments, Settings,
-                                         False);
+                  Parse_Named_Arguments
+                    (Scanner, Input, Arguments, Settings, False);
                   if Id = "super" then
                      if Arguments.Length > 0 then
                         raise Template_Error
                           with "'super' does not support any arguments here";
                      end if;
-                     Result := new Expression'
-                       (Kind => Operator_Super,
-                        Named_Arguments => To_Vector (Result)
-                       );
+                     Result :=
+                       new Expression'
+                         (Kind            => Operator_Super,
+                          Named_Arguments => To_Vector (Result));
                   elsif Id = "items" then
                      if Arguments.Length > 0 then
                         raise Template_Error
                           with "'items' does not support any arguments here";
                      end if;
-                     Result := new Expression'
-                       (Kind => Operator_Items,
-                        Named_Arguments => To_Vector (Result)
-                       );
+                     Result :=
+                       new Expression'
+                         (Kind            => Operator_Items,
+                          Named_Arguments => To_Vector (Result));
                   else
                      if Result.Kind /= Variable then
                         Delete_Expression (Result);
@@ -289,22 +297,23 @@ package body Expression_Parser is
                      end if;
                      Name := Result.Variable_Name;
                      Delete_Expression (Result);
-                     Result := new Expression'
-                       (Kind => Operator_Macro,
-                        Macro_Variable_Name => Name,
-                        Macro_Name => To_Unbounded_String (Id),
-                        Macro_Arguments => Arguments);
+                     Result :=
+                       new Expression'
+                         (Kind                => Operator_Macro,
+                          Macro_Variable_Name => Name,
+                          Macro_Name          => To_Unbounded_String (Id),
+                          Macro_Arguments     => Arguments);
                   end if;
                else
-                  Result := new Expression'
-                    (Kind => Operator_Dot,
-                     Named_Arguments => To_Vector (Result,
-                       new Expression'
-                         (Kind => Variable,
-                          Variable_Name => To_Unbounded_String (Id)
-                         )
-                      )
-                    );
+                  Result :=
+                    new Expression'
+                      (Kind            => Operator_Dot,
+                       Named_Arguments =>
+                         To_Vector
+                           (Result,
+                            new Expression'
+                              (Kind          => Variable,
+                               Variable_Name => To_Unbounded_String (Id))));
                end if;
             end;
          else
@@ -313,10 +322,10 @@ package body Expression_Parser is
                New_Expression : constant Jintp.Expression_Access :=
                  Parse (Scanner, Input, Settings);
             begin
-               Result := new Expression'
-                  (Kind => Operator_Brackets,
-                   Named_Arguments => To_Vector (Result, New_Expression)
-                  );
+               Result :=
+                 new Expression'
+                   (Kind            => Operator_Brackets,
+                    Named_Arguments => To_Vector (Result, New_Expression));
             end;
             if Jintp.Scanner.Current_Token (Scanner).Kind
               /= Right_Bracket_Token
@@ -333,21 +342,23 @@ package body Expression_Parser is
          raise;
    end Parse_Primitive;
 
-   function Parse_Power (Scanner : in out Scanner_State;
-                   Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment'Class)
-                   return Jintp.Expression_Access is
+   function Parse_Power
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
+   is
       Right_Expression : Expression_Access;
-      Result : Expression_Access := Parse_Primitive (Scanner, Input, Settings);
-      Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
+      Result           : Expression_Access :=
+        Parse_Primitive (Scanner, Input, Settings);
+      Current_Token    : Token := Jintp.Scanner.Current_Token (Scanner);
    begin
       while Current_Token.Kind = Power_Token loop
          Next_Token (Scanner, Input, Current_Token, Settings);
          Right_Expression := Parse_Primitive (Scanner, Input, Settings);
-         Result := new Expression'
-           (Kind => Operator_Power,
-            Named_Arguments => To_Vector (Result, Right_Expression)
-           );
+         Result :=
+           new Expression'
+             (Kind            => Operator_Power,
+              Named_Arguments => To_Vector (Result, Right_Expression));
          Current_Token := Jintp.Scanner.Current_Token (Scanner);
       end loop;
       return Result;
@@ -357,64 +368,73 @@ package body Expression_Parser is
          raise;
    end Parse_Power;
 
-   function Parse_Unary (Scanner : in out Scanner_State;
-                         Input : in out Jintp.Input.Character_Iterator'Class;
-                         Settings : Environment'Class)
-                         return Jintp.Expression_Access is
+   function Parse_Unary
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
+   is
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
    begin
       case Current_Token.Kind is
-         when Plus_Token =>
+         when Plus_Token  =>
             Next_Token (Scanner, Input, Current_Token, Settings);
-            return new Expression'
-              (Kind => Operator_Plus,
-               Named_Arguments => To_Vector
-                 (Parse_Power (Scanner, Input, Settings))
-              );
+            return
+              new Expression'
+                (Kind            => Operator_Plus,
+                 Named_Arguments =>
+                   To_Vector (Parse_Power (Scanner, Input, Settings)));
+
          when Minus_Token =>
             Next_Token (Scanner, Input, Current_Token, Settings);
-            return new Expression'
-              (Kind => Operator_Minus,
-               Named_Arguments => To_Vector
-                 (Parse_Power (Scanner, Input, Settings))
-              );
-         when others =>
+            return
+              new Expression'
+                (Kind            => Operator_Minus,
+                 Named_Arguments =>
+                   To_Vector (Parse_Power (Scanner, Input, Settings)));
+
+         when others      =>
             return Parse_Power (Scanner, Input, Settings);
       end case;
    end Parse_Unary;
 
-   function Parse_Mul_Div (Scanner : in out Scanner_State;
-                   Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment'Class)
-                   return Jintp.Expression_Access is
+   function Parse_Mul_Div
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
+   is
       Right_Expression : Expression_Access;
-      Result : Expression_Access := Parse_Unary (Scanner, Input, Settings);
-      Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
+      Result           : Expression_Access :=
+        Parse_Unary (Scanner, Input, Settings);
+      Current_Token    : Token := Jintp.Scanner.Current_Token (Scanner);
    begin
       while Current_Token.Kind in Mul_Token .. Integer_Div_Token loop
          case Current_Token.Kind is
-            when Mul_Token =>
+            when Mul_Token         =>
                Next_Token (Scanner, Input, Current_Token, Settings);
                Right_Expression := Parse_Unary (Scanner, Input, Settings);
-               Result := new Expression'
-                 (Kind => Operator_Mul,
-                  Named_Arguments => To_Vector (Result, Right_Expression)
-                 );
-            when Div_Token =>
+               Result :=
+                 new Expression'
+                   (Kind            => Operator_Mul,
+                    Named_Arguments => To_Vector (Result, Right_Expression));
+
+            when Div_Token         =>
                Next_Token (Scanner, Input, Current_Token, Settings);
                Right_Expression := Parse_Unary (Scanner, Input, Settings);
-               Result := new Expression'
-                 (Kind => Operator_Div,
-                  Named_Arguments => To_Vector (Result, Right_Expression)
-                 );
+               Result :=
+                 new Expression'
+                   (Kind            => Operator_Div,
+                    Named_Arguments => To_Vector (Result, Right_Expression));
+
             when Integer_Div_Token =>
                Next_Token (Scanner, Input, Current_Token, Settings);
                Right_Expression := Parse_Unary (Scanner, Input, Settings);
-               Result := new Expression'
-                 (Kind => Operator_Integer_Div,
-                  Named_Arguments => To_Vector (Result, Right_Expression)
-                 );
-            when others => null;
+               Result :=
+                 new Expression'
+                   (Kind            => Operator_Integer_Div,
+                    Named_Arguments => To_Vector (Result, Right_Expression));
+
+            when others            =>
+               null;
          end case;
          Current_Token := Jintp.Scanner.Current_Token (Scanner);
       end loop;
@@ -425,38 +445,44 @@ package body Expression_Parser is
          raise;
    end Parse_Mul_Div;
 
-   function Parse_Add_Sub (Scanner : in out Scanner_State;
-                   Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment'Class)
-                   return Jintp.Expression_Access is
+   function Parse_Add_Sub
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
+   is
       Right_Expression : Expression_Access;
-      Result : Expression_Access := Parse_Mul_Div (Scanner, Input, Settings);
-      Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
+      Result           : Expression_Access :=
+        Parse_Mul_Div (Scanner, Input, Settings);
+      Current_Token    : Token := Jintp.Scanner.Current_Token (Scanner);
    begin
       while Current_Token.Kind in Plus_Token .. Tilde_Token loop
          case Current_Token.Kind is
-            when Plus_Token =>
+            when Plus_Token  =>
                Next_Token (Scanner, Input, Current_Token, Settings);
                Right_Expression := Parse_Mul_Div (Scanner, Input, Settings);
-               Result := new Expression'
-                 (Kind => Operator_Plus,
-                  Named_Arguments => To_Vector (Result, Right_Expression)
-                 );
+               Result :=
+                 new Expression'
+                   (Kind            => Operator_Plus,
+                    Named_Arguments => To_Vector (Result, Right_Expression));
+
             when Minus_Token =>
                Next_Token (Scanner, Input, Current_Token, Settings);
                Right_Expression := Parse_Mul_Div (Scanner, Input, Settings);
-               Result := new Expression'
-                 (Kind => Operator_Minus,
-                  Named_Arguments => To_Vector (Result, Right_Expression)
-                 );
+               Result :=
+                 new Expression'
+                   (Kind            => Operator_Minus,
+                    Named_Arguments => To_Vector (Result, Right_Expression));
+
             when Tilde_Token =>
                Next_Token (Scanner, Input, Current_Token, Settings);
                Right_Expression := Parse_Mul_Div (Scanner, Input, Settings);
-               Result := new Expression'
-                 (Kind => Operator_Tilde,
-                  Named_Arguments => To_Vector (Result, Right_Expression)
-                 );
-            when others => null;
+               Result :=
+                 new Expression'
+                   (Kind            => Operator_Tilde,
+                    Named_Arguments => To_Vector (Result, Right_Expression));
+
+            when others      =>
+               null;
          end case;
          Current_Token := Jintp.Scanner.Current_Token (Scanner);
       end loop;
@@ -470,27 +496,31 @@ package body Expression_Parser is
    function Is_Comparison (Kind : Token_Kind) return Boolean is
    begin
       case Kind is
-         when Eq_Token | Ineq_Token | Le_Token | Lt_Token | Ge_Token
-           | Gt_Token => return True;
-         when others => return False;
+         when Eq_Token | Ineq_Token | Le_Token | Lt_Token | Ge_Token | Gt_Token
+         =>
+            return True;
+
+         when others
+         =>
+            return False;
       end case;
    end Is_Comparison;
 
    function Parse_Comparison
-     (Scanner : in out Scanner_State;
-      Input : in out Jintp.Input.Character_Iterator'Class;
-      Settings : Environment'Class)
-      return Jintp.Expression_Access
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
    is
-      Current_Token : Token;
-      Left_Expression : Jintp.Expression_Access
-        := Parse_Add_Sub (Scanner, Input, Settings);
+      Current_Token    : Token;
+      Left_Expression  : Jintp.Expression_Access :=
+        Parse_Add_Sub (Scanner, Input, Settings);
       Right_Expression : Jintp.Expression_Access;
-      Kind : constant Token_Kind := Jintp.Scanner.Current_Token (Scanner).Kind;
+      Kind             : constant Token_Kind :=
+        Jintp.Scanner.Current_Token (Scanner).Kind;
    begin
       if Kind = Is_Token then
          declare
-            Name : Unbounded_String;
+            Name      : Unbounded_String;
             Arguments : Named_Argument_Vectors.Vector;
          begin
             Next_Token (Scanner, Input, Current_Token, Settings);
@@ -499,28 +529,30 @@ package body Expression_Parser is
             elsif Current_Token.Kind = In_Token then
                Name := To_Unbounded_String ("in");
             else
-               raise Template_Error with "expected test name, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with "expected test name, got " & Current_Token.Kind'Image;
             end if;
             Next_Token (Scanner, Input, Current_Token, Settings);
             case Current_Token.Kind is
-               when Left_Paren_Token =>
+               when Left_Paren_Token   =>
                   Parse_Named_Arguments (Scanner, Input, Arguments, Settings);
-               when Identifier_Token .. Float_Literal_Token | Left_Bracket_Token =>
-                  Arguments.Append ((Name => Null_Unbounded_String,
-                                     Argument => Parse (Scanner,
-                                       Input,
-                                       Settings)
-                                    ));
-               when others =>
+
+               when Identifier_Token .. Float_Literal_Token
+                  | Left_Bracket_Token =>
+                  Arguments.Append
+                    ((Name     => Null_Unbounded_String,
+                      Argument => Parse (Scanner, Input, Settings)));
+
+               when others             =>
                   null;
             end case;
-            return new Expression'
-              (Kind => Test,
-               Name => Name,
-               Arguments => To_Array ((Null_Unbounded_String, Left_Expression)
-                 & Arguments)
-              );
+            return
+              new Expression'
+                (Kind      => Test,
+                 Name      => Name,
+                 Arguments =>
+                   To_Array
+                     ((Null_Unbounded_String, Left_Expression) & Arguments));
          end;
       end if;
       if not Is_Comparison (Kind) then
@@ -529,37 +561,50 @@ package body Expression_Parser is
       Next_Token (Scanner, Input, Current_Token, Settings);
       Right_Expression := Parse_Add_Sub (Scanner, Input, Settings);
       case Kind is
-         when Eq_Token =>
-            return new Expression'
-              (Kind => Operator_Eq,
-               Named_Arguments => To_Vector (Left_Expression, Right_Expression)
-              );
+         when Eq_Token   =>
+            return
+              new Expression'
+                (Kind            => Operator_Eq,
+                 Named_Arguments =>
+                   To_Vector (Left_Expression, Right_Expression));
+
          when Ineq_Token =>
-            return new Expression'
-              (Kind => Operator_Neq,
-               Named_Arguments => To_Vector (Left_Expression, Right_Expression)
-              );
-         when Le_Token =>
-            return new Expression'
-              (Kind => Operator_Le,
-               Named_Arguments => To_Vector (Left_Expression, Right_Expression)
-              );
-         when Lt_Token =>
-            return new Expression'
-              (Kind => Operator_Lt,
-               Named_Arguments => To_Vector (Left_Expression, Right_Expression)
-              );
-         when Ge_Token =>
-            return new Expression'
-              (Kind => Operator_Ge,
-               Named_Arguments => To_Vector (Left_Expression, Right_Expression)
-              );
-         when Gt_Token =>
-            return new Expression'
-              (Kind => Operator_Gt,
-               Named_Arguments => To_Vector (Left_Expression, Right_Expression)
-              );
-         when others => raise Template_Error
+            return
+              new Expression'
+                (Kind            => Operator_Neq,
+                 Named_Arguments =>
+                   To_Vector (Left_Expression, Right_Expression));
+
+         when Le_Token   =>
+            return
+              new Expression'
+                (Kind            => Operator_Le,
+                 Named_Arguments =>
+                   To_Vector (Left_Expression, Right_Expression));
+
+         when Lt_Token   =>
+            return
+              new Expression'
+                (Kind            => Operator_Lt,
+                 Named_Arguments =>
+                   To_Vector (Left_Expression, Right_Expression));
+
+         when Ge_Token   =>
+            return
+              new Expression'
+                (Kind            => Operator_Ge,
+                 Named_Arguments =>
+                   To_Vector (Left_Expression, Right_Expression));
+
+         when Gt_Token   =>
+            return
+              new Expression'
+                (Kind            => Operator_Gt,
+                 Named_Arguments =>
+                   To_Vector (Left_Expression, Right_Expression));
+
+         when others     =>
+            raise Template_Error
               with "Internal error: invalid operator: " & Kind'Image;
       end case;
 
@@ -569,45 +614,50 @@ package body Expression_Parser is
          raise;
    end Parse_Comparison;
 
-   function Parse_Not (Scanner : in out Scanner_State;
-                   Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment'Class)
-                   return Jintp.Expression_Access is
-      Result : Expression_Access;
+   function Parse_Not
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
+   is
+      Result        : Expression_Access;
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
    begin
       case Current_Token.Kind is
          when Not_Token =>
             Next_Token (Scanner, Input, Current_Token, Settings);
-            declare Subexpression : constant Expression_Access :=
-              Parse_Comparison (Scanner, Input, Settings);
+            declare
+               Subexpression : constant Expression_Access :=
+                 Parse_Comparison (Scanner, Input, Settings);
             begin
-               Result := new Expression'
-                 (Kind => Operator_Not,
-                  Named_Arguments => To_Vector (Subexpression)
-                 );
+               Result :=
+                 new Expression'
+                   (Kind            => Operator_Not,
+                    Named_Arguments => To_Vector (Subexpression));
             end;
-         when others =>
+
+         when others    =>
             return Parse_Comparison (Scanner, Input, Settings);
       end case;
       return Result;
    end Parse_Not;
 
-   function Parse_And (Scanner : in out Scanner_State;
-                   Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment'Class)
-                   return Jintp.Expression_Access is
+   function Parse_And
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
+   is
       Right_Expression : Expression_Access;
-      Result : Expression_Access := Parse_Not (Scanner, Input, Settings);
-      Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
+      Result           : Expression_Access :=
+        Parse_Not (Scanner, Input, Settings);
+      Current_Token    : Token := Jintp.Scanner.Current_Token (Scanner);
    begin
       while Current_Token.Kind = And_Token loop
          Next_Token (Scanner, Input, Current_Token, Settings);
          Right_Expression := Parse_Not (Scanner, Input, Settings);
-         Result := new Expression'
-           (Kind => Operator_And,
-            Named_Arguments => To_Vector (Result, Right_Expression)
-           );
+         Result :=
+           new Expression'
+             (Kind            => Operator_And,
+              Named_Arguments => To_Vector (Result, Right_Expression));
          Current_Token := Jintp.Scanner.Current_Token (Scanner);
       end loop;
       return Result;
@@ -617,21 +667,23 @@ package body Expression_Parser is
          raise;
    end Parse_And;
 
-   function Parse_Or (Scanner : in out Scanner_State;
-                   Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment'Class)
-                       return Jintp.Expression_Access is
+   function Parse_Or
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
+   is
       Right_Expression : Expression_Access;
-      Result : Expression_Access := Parse_And (Scanner, Input, Settings);
-      Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
+      Result           : Expression_Access :=
+        Parse_And (Scanner, Input, Settings);
+      Current_Token    : Token := Jintp.Scanner.Current_Token (Scanner);
    begin
       while Current_Token.Kind = Or_Token loop
          Next_Token (Scanner, Input, Current_Token, Settings);
          Right_Expression := Parse_And (Scanner, Input, Settings);
-         Result := new Expression'(Kind => Operator_Or,
-                                   Named_Arguments => To_Vector (Result,
-                                     Right_Expression)
-                                   );
+         Result :=
+           new Expression'
+             (Kind            => Operator_Or,
+              Named_Arguments => To_Vector (Result, Right_Expression));
          Current_Token := Jintp.Scanner.Current_Token (Scanner);
       end loop;
       return Result;
@@ -642,8 +694,7 @@ package body Expression_Parser is
    end Parse_Or;
 
    procedure Check_Naming_Consistency
-     (Arguments : Named_Argument_Vectors.Vector;
-      All_Or_None : Boolean)
+     (Arguments : Named_Argument_Vectors.Vector; All_Or_None : Boolean)
    is
       Arg_Count : constant Natural := Natural (Length (Arguments));
    begin
@@ -668,13 +719,14 @@ package body Expression_Parser is
    end Check_Naming_Consistency;
 
    procedure Parse_Named_Arguments
-     (Scanner : in out Scanner_State;
-      Input : in out Jintp.Input.Character_Iterator'Class;
-      Arguments : out Named_Argument_Vectors.Vector;
-      Settings : Environment'Class;
+     (Scanner                     : in out Scanner_State;
+      Input                       :
+        in out Jintp.Input.Character_Iterator'Class;
+      Arguments                   : out Named_Argument_Vectors.Vector;
+      Settings                    : Environment'Class;
       Named_Arguments_All_Or_None : Boolean := True)
    is
-      Argument : Named_Argument;
+      Argument      : Named_Argument;
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
    begin
       Arguments := Named_Argument_Vectors.Empty_Vector;
@@ -695,9 +747,9 @@ package body Expression_Parser is
                Argument.Argument := Parse_Or (Scanner, Input, Settings);
                Current_Token := Jintp.Scanner.Current_Token (Scanner);
             else
-               Argument.Argument := new Expression'
-                 (Kind => Variable,
-                  Variable_Name => Argument.Name);
+               Argument.Argument :=
+                 new Expression'
+                   (Kind => Variable, Variable_Name => Argument.Name);
                Argument.Name := Null_Unbounded_String;
             end if;
          else
@@ -710,8 +762,8 @@ package body Expression_Parser is
             exit;
          end if;
          if Current_Token.Kind /= Comma_Token then
-            raise Template_Error with "',' or ')' expected, got "
-              & Current_Token.Kind'Image;
+            raise Template_Error
+              with "',' or ')' expected, got " & Current_Token.Kind'Image;
          end if;
          Next_Token (Scanner, Input, Current_Token, Settings);
       end loop;
@@ -726,39 +778,42 @@ package body Expression_Parser is
    end Parse_Named_Arguments;
 
    procedure Extract_Arguments
-     (Source : in out Named_Argument_Vectors.Vector;
-      Target : in out Expression_Access_Array;
+     (Source    : in out Named_Argument_Vectors.Vector;
+      Target    : in out Expression_Access_Array;
       Signature : Parameters)
    is
       Position : Named_Argument_Vectors.Cursor;
    begin
       for I in 1 .. Signature'Last - Signature'First + 1 loop
          if I <= Natural (Source.Length)
-            and then Source (I).Name = Null_Unbounded_String
+           and then Source (I).Name = Null_Unbounded_String
          then
             --  Positional parameter
             Target (Target'First + I - 1) := Source (I).Argument;
             Source (I).Argument := null;
          else
-            Position := Find_Named_Argument
-              (Source, Signature (Signature'First + I - 1).Name);
+            Position :=
+              Find_Named_Argument
+                (Source, Signature (Signature'First + I - 1).Name);
             if Position /= Named_Argument_Vectors.No_Element then
                --  Named parameter
                Target (Target'First + I - 1) := Source (Position).Argument;
                Source (Position).Argument := null;
             elsif Signature (Signature'First + I - 1).Has_Default_Value then
                --  Default parameter value
-               Target (Target'First + I - 1) := new Expression'
-                 (Kind => Literal,
-                  Value => Signature (Signature'First + I - 1).Default_Value);
+               Target (Target'First + I - 1) :=
+                 new Expression'
+                   (Kind  => Literal,
+                    Value =>
+                      Signature (Signature'First + I - 1).Default_Value);
             end if;
          end if;
       end loop;
    end Extract_Arguments;
 
    function To_Array
-     (Filter_Name : String;
-      First_Argument : Expression_Access;
+     (Filter_Name         : String;
+      First_Argument      : Expression_Access;
       Remaining_Arguments : in out Named_Argument_Vectors.Vector)
       return Expression_Access_Array
    is
@@ -769,146 +824,151 @@ package body Expression_Parser is
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            ((Name => To_Unbounded_String ("case_sensitive"),
+            ((Name              => To_Unbounded_String ("case_sensitive"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Boolean_Expression_Value,
-                                B => False)),
-             (Name => To_Unbounded_String ("by"),
+              Default_Value     =>
+                (Kind => Boolean_Expression_Value, B => False)),
+             (Name              => To_Unbounded_String ("by"),
               Has_Default_Value => True,
-              Default_Value => (Kind => String_Expression_Value,
-                                S => To_Unbounded_String ("key"))),
-             (Name => To_Unbounded_String ("reverse"),
+              Default_Value     =>
+                (Kind => String_Expression_Value,
+                 S    => To_Unbounded_String ("key"))),
+             (Name              => To_Unbounded_String ("reverse"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Boolean_Expression_Value,
-                                B => False))));
+              Default_Value     =>
+                (Kind => Boolean_Expression_Value, B => False))));
       elsif Filter_Name = "batch" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            ((Name => To_Unbounded_String ("linecount"),
+            ((Name              => To_Unbounded_String ("linecount"),
               Has_Default_Value => False),
-             (Name => To_Unbounded_String ("fill_with"),
+             (Name              => To_Unbounded_String ("fill_with"),
               Has_Default_Value => False)));
       elsif Filter_Name = "slice" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            ((Name => To_Unbounded_String ("slices"),
+            ((Name              => To_Unbounded_String ("slices"),
               Has_Default_Value => False),
-             (Name => To_Unbounded_String ("fill_with"),
+             (Name              => To_Unbounded_String ("fill_with"),
               Has_Default_Value => False)));
       elsif Filter_Name = "center" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            (1 => (Name => To_Unbounded_String ("width"),
-                   Has_Default_Value => True,
-                   Default_Value => (Kind => Integer_Expression_Value,
-                                     I => 80))));
+            (1 =>
+               (Name              => To_Unbounded_String ("width"),
+                Has_Default_Value => True,
+                Default_Value     =>
+                  (Kind => Integer_Expression_Value, I => 80))));
       elsif Filter_Name = "join" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            (1 => (Name => To_Unbounded_String ("d"),
-                   Has_Default_Value => True,
-                   Default_Value => (Kind => String_Expression_Value,
-                                     S => Null_Unbounded_String))));
+            (1 =>
+               (Name              => To_Unbounded_String ("d"),
+                Has_Default_Value => True,
+                Default_Value     =>
+                  (Kind => String_Expression_Value,
+                   S    => Null_Unbounded_String))));
       elsif Filter_Name = "trim" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            (1 => (Name => To_Unbounded_String ("chars"),
-                   Has_Default_Value => True,
-                   Default_Value => (Kind => String_Expression_Value,
-                                     S => Null_Unbounded_String))));
+            (1 =>
+               (Name              => To_Unbounded_String ("chars"),
+                Has_Default_Value => True,
+                Default_Value     =>
+                  (Kind => String_Expression_Value,
+                   S    => Null_Unbounded_String))));
       elsif Filter_Name = "max" or else Filter_Name = "min" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            (1 => (Name => To_Unbounded_String ("case_sensitive"),
-                   Has_Default_Value => True,
-                   Default_Value => (Kind => Boolean_Expression_Value,
-                                     B => False))));
+            (1 =>
+               (Name              => To_Unbounded_String ("case_sensitive"),
+                Has_Default_Value => True,
+                Default_Value     =>
+                  (Kind => Boolean_Expression_Value, B => False))));
       elsif Filter_Name = "round" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            ((Name => To_Unbounded_String ("precision"),
+            ((Name              => To_Unbounded_String ("precision"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Integer_Expression_Value,
-                                I => 0)),
-             (Name => To_Unbounded_String ("method"),
+              Default_Value     => (Kind => Integer_Expression_Value, I => 0)),
+             (Name              => To_Unbounded_String ("method"),
               Has_Default_Value => True,
-              Default_Value => (Kind => String_Expression_Value,
-                                S => To_Unbounded_String ("common")))));
+              Default_Value     =>
+                (Kind => String_Expression_Value,
+                 S    => To_Unbounded_String ("common")))));
       elsif Filter_Name = "int" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            ((Name => To_Unbounded_String ("default"),
+            ((Name              => To_Unbounded_String ("default"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Integer_Expression_Value,
-                                I => 0)),
-             (Name => To_Unbounded_String ("base"),
+              Default_Value     => (Kind => Integer_Expression_Value, I => 0)),
+             (Name              => To_Unbounded_String ("base"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Integer_Expression_Value,
-                                I => 10))));
+              Default_Value     =>
+                (Kind => Integer_Expression_Value, I => 10))));
       elsif Filter_Name = "float" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            (1 => (Name => To_Unbounded_String ("default"),
-                   Has_Default_Value => True,
-                   Default_Value => (Kind => Float_Expression_Value,
-                                     F => 0.0))));
+            (1 =>
+               (Name              => To_Unbounded_String ("default"),
+                Has_Default_Value => True,
+                Default_Value     =>
+                  (Kind => Float_Expression_Value, F => 0.0))));
       elsif Filter_Name = "indent" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            ((Name => To_Unbounded_String ("width"),
+            ((Name              => To_Unbounded_String ("width"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Integer_Expression_Value,
-                                I => 4)),
-             (Name => To_Unbounded_String ("first"),
+              Default_Value     => (Kind => Integer_Expression_Value, I => 4)),
+             (Name              => To_Unbounded_String ("first"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Boolean_Expression_Value,
-                                B => False)),
-             (Name => To_Unbounded_String ("blank"),
+              Default_Value     =>
+                (Kind => Boolean_Expression_Value, B => False)),
+             (Name              => To_Unbounded_String ("blank"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Boolean_Expression_Value,
-                                B => False))));
+              Default_Value     =>
+                (Kind => Boolean_Expression_Value, B => False))));
       elsif Filter_Name = "replace" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            ((Name => To_Unbounded_String ("old"),
-              Has_Default_Value => False),
-             (Name => To_Unbounded_String ("new"),
-              Has_Default_Value => False),
-             (Name => To_Unbounded_String ("count"),
+            ((Name => To_Unbounded_String ("old"), Has_Default_Value => False),
+             (Name => To_Unbounded_String ("new"), Has_Default_Value => False),
+             (Name              => To_Unbounded_String ("count"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Integer_Expression_Value,
-                                I => -1))));
+              Default_Value     =>
+                (Kind => Integer_Expression_Value, I => -1))));
       elsif Filter_Name = "truncate" then
          Extract_Arguments
            (Remaining_Arguments,
             Result (2 .. Result'Last),
-            ((Name => To_Unbounded_String ("length"),
+            ((Name              => To_Unbounded_String ("length"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Integer_Expression_Value,
-                                I => 255)),
-             (Name => To_Unbounded_String ("killwords"),
+              Default_Value     =>
+                (Kind => Integer_Expression_Value, I => 255)),
+             (Name              => To_Unbounded_String ("killwords"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Boolean_Expression_Value,
-                                B => False)),
-             (Name => To_Unbounded_String ("end"),
+              Default_Value     =>
+                (Kind => Boolean_Expression_Value, B => False)),
+             (Name              => To_Unbounded_String ("end"),
               Has_Default_Value => True,
-              Default_Value => (Kind => String_Expression_Value,
-                                S => To_Unbounded_String ("..."))),
-             (Name => To_Unbounded_String ("leeway"),
+              Default_Value     =>
+                (Kind => String_Expression_Value,
+                 S    => To_Unbounded_String ("..."))),
+             (Name              => To_Unbounded_String ("leeway"),
               Has_Default_Value => True,
-              Default_Value => (Kind => Integer_Expression_Value,
-                                I => 5))));
+              Default_Value     =>
+                (Kind => Integer_Expression_Value, I => 5))));
       else
          if Natural (Remaining_Arguments.Length) > Argument_Capacity + 1 then
             raise Template_Error with "too many arguments to " & Filter_Name;
@@ -921,14 +981,16 @@ package body Expression_Parser is
       return Result;
    end To_Array;
 
-   function Parse (Scanner : in out Scanner_State;
-                   Input : in out Jintp.Input.Character_Iterator'Class;
-                   Settings : Environment'Class)
-                   return Jintp.Expression_Access is
-      Result : Expression_Access := Parse_Or (Scanner, Input, Settings);
-      Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
+   function Parse
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
+   is
+      Result          : Expression_Access :=
+        Parse_Or (Scanner, Input, Settings);
+      Current_Token   : Token := Jintp.Scanner.Current_Token (Scanner);
       Named_Arguments : Named_Argument_Vectors.Vector;
-      Filter_Name : Unbounded_String;
+      Filter_Name     : Unbounded_String;
    begin
       while Current_Token.Kind = Pipe_Token loop
          Next_Token (Scanner, Input, Current_Token, Settings);
@@ -939,12 +1001,12 @@ package body Expression_Parser is
          Next_Token (Scanner, Input, Current_Token, Settings);
          Parse_Named_Arguments (Scanner, Input, Named_Arguments, Settings);
          Current_Token := Jintp.Scanner.Current_Token (Scanner);
-         Result := new Expression'(Kind => Filter,
-                                   Name => Filter_Name,
-                                   Arguments =>
-                                     To_Array (To_String (Filter_Name),
-                                       Result,
-                                       Named_Arguments));
+         Result :=
+           new Expression'
+             (Kind      => Filter,
+              Name      => Filter_Name,
+              Arguments =>
+                To_Array (To_String (Filter_Name), Result, Named_Arguments));
       end loop;
       return Result;
    exception
@@ -956,20 +1018,20 @@ package body Expression_Parser is
          raise;
    end Parse;
 
-   function Parse_With_End (
-     Input : in out Jintp.Input.Character_Iterator'Class;
-     Settings : Environment'Class)
-     return Jintp.Expression_Access is
-      Scanner : Scanner_State;
-      Result : Expression_Access;
+   function Parse_With_End
+     (Input    : in out Jintp.Input.Character_Iterator'Class;
+      Settings : Environment'Class) return Jintp.Expression_Access
+   is
+      Scanner       : Scanner_State;
+      Result        : Expression_Access;
       Current_Token : Token;
    begin
       Next_Token (Scanner, Input, Current_Token, Settings);
       Result := Parse (Scanner, Input, Settings);
       Current_Token := Jintp.Scanner.Current_Token (Scanner);
       if Current_Token.Kind /= Expression_End_Token then
-         raise Template_Error with "end of expression expected, got "
-           & Current_Token.Kind'Image;
+         raise Template_Error
+           with "end of expression expected, got " & Current_Token.Kind'Image;
       end if;
       return Result;
    exception
