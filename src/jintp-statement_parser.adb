@@ -9,13 +9,14 @@ package body Statement_Parser is
    use Jintp.Scanner;
 
    procedure Parse_Value
-     (Scanner : in out Scanner_State;
-      Input : in out Jintp.Input.Character_Iterator'Class;
-      Value : out Expression_Value;
-      Settings : Environment'Class) is
-      Expression : Expression_Access := Jintp.Expression_Parser.Parse
-        (Scanner, Input, Settings);
-      Resolver : aliased Jintp.Context;
+     (Scanner  : in out Scanner_State;
+      Input    : in out Jintp.Input.Character_Iterator'Class;
+      Value    : out Expression_Value;
+      Settings : Environment'Class)
+   is
+      Expression : Expression_Access :=
+        Jintp.Expression_Parser.Parse (Scanner, Input, Settings);
+      Resolver   : aliased Jintp.Context;
    begin
       Value := Evaluate (Expression.all, Resolver);
       Delete_Expression (Expression);
@@ -25,17 +26,18 @@ package body Statement_Parser is
    end Parse_Value;
 
    procedure Parse_Parameters
-     (Scanner : in out Scanner_State;
-      Input : in out Jintp.Input.Character_Iterator'Class;
+     (Scanner    : in out Scanner_State;
+      Input      : in out Jintp.Input.Character_Iterator'Class;
       Parameters : out Parameter_Vectors.Vector;
-      Settings : Environment'Class) is
-      Name : Unbounded_String;
+      Settings   : Environment'Class)
+   is
+      Name          : Unbounded_String;
       Default_Value : Expression_Value;
       Current_Token : Token := Jintp.Scanner.Current_Token (Scanner);
    begin
       if Current_Token.Kind /= Left_Paren_Token then
-         raise Template_Error with "'(' expected, found "
-           & Current_Token.Kind'Image;
+         raise Template_Error
+           with "'(' expected, found " & Current_Token.Kind'Image;
       end if;
       Next_Token (Scanner, Input, Current_Token, Settings);
       if Current_Token.Kind = Right_Paren_Token then
@@ -44,8 +46,8 @@ package body Statement_Parser is
 
       loop
          if Current_Token.Kind /= Identifier_Token then
-            raise Template_Error with "identifier expected, found "
-              & Current_Token.Kind'Image;
+            raise Template_Error
+              with "identifier expected, found " & Current_Token.Kind'Image;
          end if;
          Name := Current_Token.Identifier;
          Next_Token (Scanner, Input, Current_Token, Settings);
@@ -53,69 +55,73 @@ package body Statement_Parser is
             Next_Token (Scanner, Input, Current_Token, Settings);
             Parse_Value (Scanner, Input, Default_Value, Settings);
             Current_Token := Jintp.Scanner.Current_Token (Scanner);
-            Parameters.Append (Parameter'
-                      (Has_Default_Value => True,
-                       Name => Name,
-                       Default_Value => Default_Value));
+            Parameters.Append
+              (Parameter'
+                 (Has_Default_Value => True,
+                  Name              => Name,
+                  Default_Value     => Default_Value));
          else
-            Parameters.Append (Parameter'
-                      (Has_Default_Value => False,
-                       Name => Name));
+            Parameters.Append
+              (Parameter'(Has_Default_Value => False, Name => Name));
          end if;
          if Current_Token.Kind = Right_Paren_Token then
             return;
          end if;
          if Current_Token.Kind /= Comma_Token then
-            raise Template_Error with "',' expected, found "
-                 & Current_Token.Kind'Image;
+            raise Template_Error
+              with "',' expected, found " & Current_Token.Kind'Image;
          end if;
          Next_Token (Scanner, Input, Current_Token, Settings);
       end loop;
    end Parse_Parameters;
 
-   procedure Parse (Input : in out Character_Iterator'Class;
-                    Settings : Environment'Class;
-                    Result : out Statement;
-                    End_Modifier : out Character) is
+   procedure Parse
+     (Input        : in out Character_Iterator'Class;
+      Settings     : Environment'Class;
+      Result       : out Statement;
+      End_Modifier : out Character)
+   is
       Control_Expression : Expression_Access;
-      Variable_Name : Unbounded_String;
-      Variable_2_Name : Unbounded_String;
-      File_Name : Unbounded_String;
-      Condition : Expression_Access := null;
-      Scanner : Scanner_State;
-      Current_Token : Token;
-      Kind : Token_Kind;
-      Parameters : Parameter_Vectors.Vector;
-      Macro_Name : Unbounded_String;
-      Import_Variables : Name_Mapping_Vectors.Vector;
+      Variable_Name      : Unbounded_String;
+      Variable_2_Name    : Unbounded_String;
+      File_Name          : Unbounded_String;
+      Condition          : Expression_Access := null;
+      Scanner            : Scanner_State;
+      Current_Token      : Token;
+      Kind               : Token_Kind;
+      Parameters         : Parameter_Vectors.Vector;
+      Macro_Name         : Unbounded_String;
+      Import_Variables   : Name_Mapping_Vectors.Vector;
    begin
       Next_Token (Scanner, Input, Current_Token, Settings);
       case Current_Token.Kind is
          when If_Token | Elif_Token =>
             Kind := Current_Token.Kind;
             Next_Token (Scanner, Input, Current_Token, Settings);
-            Control_Expression := Jintp.Expression_Parser
-              .Parse (Scanner, Input, Settings);
+            Control_Expression :=
+              Jintp.Expression_Parser.Parse (Scanner, Input, Settings);
             if Kind = If_Token then
-               Result := (Kind => If_Statement,
-                          If_Condition => Control_Expression
-                         );
+               Result :=
+                 (Kind => If_Statement, If_Condition => Control_Expression);
             else
-               Result := (Kind => Elif_Statement,
-                          If_Condition => Control_Expression
-                         );
+               Result :=
+                 (Kind => Elif_Statement, If_Condition => Control_Expression);
             end if;
-         when Else_Token =>
+
+         when Else_Token            =>
             Result := (Kind => Else_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Endif_Token =>
+
+         when Endif_Token           =>
             Result := (Kind => Endif_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when For_Token =>
+
+         when For_Token             =>
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= Identifier_Token then
-               raise Template_Error with "loop variable expected, found"
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with
+                   "loop variable expected, found" & Current_Token.Kind'Image;
             end if;
             Variable_Name := Current_Token.Identifier;
             Next_Token (Scanner, Input, Current_Token, Settings);
@@ -131,151 +137,179 @@ package body Statement_Parser is
                raise Template_Error with "'in' expected";
             end if;
             Next_Token (Scanner, Input, Current_Token, Settings);
-            Control_Expression := Jintp.Expression_Parser
-              .Parse (Scanner, Input, Settings);
+            Control_Expression :=
+              Jintp.Expression_Parser.Parse (Scanner, Input, Settings);
             Current_Token := Jintp.Scanner.Current_Token (Scanner);
             if Current_Token.Kind = If_Token then
                Next_Token (Scanner, Input, Current_Token, Settings);
-               Condition := Jintp.Expression_Parser
-                 .Parse (Scanner, Input, Settings);
+               Condition :=
+                 Jintp.Expression_Parser.Parse (Scanner, Input, Settings);
             end if;
-            Result := (Kind => For_Statement,
-                       For_Variable_1_Name => Variable_Name,
-                       For_Variable_2_Name => Variable_2_Name,
-                       For_Expression => Control_Expression,
-                       For_Condition => Condition);
-         when Endfor_Token =>
+            Result :=
+              (Kind                => For_Statement,
+               For_Variable_1_Name => Variable_Name,
+               For_Variable_2_Name => Variable_2_Name,
+               For_Expression      => Control_Expression,
+               For_Condition       => Condition);
+
+         when Endfor_Token          =>
             Result := (Kind => Endfor_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Include_Token =>
+
+         when Include_Token         =>
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= String_Literal_Token then
                raise Template_Error with "filename expected";
             end if;
-            Result := (Kind => Include_Statement,
-                       File_Name => Current_Token.String_Value);
+            Result :=
+              (Kind      => Include_Statement,
+               File_Name => Current_Token.String_Value);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Macro_Token =>
+
+         when Macro_Token           =>
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= Identifier_Token then
-               raise Template_Error with "macro name expected, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with "macro name expected, got " & Current_Token.Kind'Image;
             end if;
             Macro_Name := Current_Token.Identifier;
             Next_Token (Scanner, Input, Current_Token, Settings);
             Parse_Parameters (Scanner, Input, Parameters, Settings);
-            Result := (Kind => Macro_Statement,
-                       Macro_Name => Macro_Name,
-                       Macro_Parameters => Parameters);
+            Result :=
+              (Kind             => Macro_Statement,
+               Macro_Name       => Macro_Name,
+               Macro_Parameters => Parameters);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Endmacro_Token =>
+
+         when Endmacro_Token        =>
             Result := (Kind => Endmacro_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Raw_Token =>
+
+         when Raw_Token             =>
             Result := (Kind => Raw_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Endraw_Token =>
+
+         when Endraw_Token          =>
             Result := (Kind => Endraw_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Extends_Token =>
+
+         when Extends_Token         =>
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= String_Literal_Token then
-               raise Template_Error with "template name expected, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with
+                   "template name expected, got " & Current_Token.Kind'Image;
             end if;
-            Result := (Kind => Extends_Statement,
-                       Parent_Name => Current_Token.String_Value);
+            Result :=
+              (Kind        => Extends_Statement,
+               Parent_Name => Current_Token.String_Value);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Block_Token =>
+
+         when Block_Token           =>
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= Identifier_Token then
-               raise Template_Error with "block name expected, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with "block name expected, got " & Current_Token.Kind'Image;
             end if;
-            Result := (Kind => Block_Statement,
-                       Block_Name => Current_Token.Identifier);
+            Result :=
+              (Kind       => Block_Statement,
+               Block_Name => Current_Token.Identifier);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Endblock_Token =>
+
+         when Endblock_Token        =>
             Result := (Kind => Endblock_Statement);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when Import_Token =>
+
+         when Import_Token          =>
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= String_Literal_Token then
-               raise Template_Error with "template name expected, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with
+                   "template name expected, got " & Current_Token.Kind'Image;
             end if;
             File_Name := Current_Token.String_Value;
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= As_Token then
-               raise Template_Error with "'as' expected, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with "'as' expected, got " & Current_Token.Kind'Image;
             end if;
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= Identifier_Token then
-               raise Template_Error with "macro name expected, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with "macro name expected, got " & Current_Token.Kind'Image;
             end if;
-            Result := (Kind => Import_Statement,
-                       Import_File_Name => File_Name,
-                       Import_Variable_Name => Current_Token.Identifier);
+            Result :=
+              (Kind                 => Import_Statement,
+               Import_File_Name     => File_Name,
+               Import_Variable_Name => Current_Token.Identifier);
             Next_Token (Scanner, Input, Current_Token, Settings);
-         when From_Token =>
+
+         when From_Token            =>
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= String_Literal_Token then
-               raise Template_Error with "template name expected, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with
+                   "template name expected, got " & Current_Token.Kind'Image;
             end if;
             File_Name := Current_Token.String_Value;
             Next_Token (Scanner, Input, Current_Token, Settings);
             if Current_Token.Kind /= Import_Token then
-               raise Template_Error with "'import' expected, got "
-                 & Current_Token.Kind'Image;
+               raise Template_Error
+                 with "'import' expected, got " & Current_Token.Kind'Image;
             end if;
             loop
                Next_Token (Scanner, Input, Current_Token, Settings);
                if Current_Token.Kind /= Identifier_Token then
-                  raise Template_Error with "variable name expected, got "
-                    & Current_Token.Kind'Image;
+                  raise Template_Error
+                    with
+                      "variable name expected, got "
+                      & Current_Token.Kind'Image;
                end if;
                Variable_Name := Current_Token.Identifier;
                Next_Token (Scanner, Input, Current_Token, Settings);
                if Current_Token.Kind = As_Token then
                   Next_Token (Scanner, Input, Current_Token, Settings);
                   if Current_Token.Kind /= Identifier_Token then
-                     raise Template_Error with "variable name expected, got "
-                       & Current_Token.Kind'Image;
+                     raise Template_Error
+                       with
+                         "variable name expected, got "
+                         & Current_Token.Kind'Image;
                   end if;
-                  Import_Variables.Append ((Source => Variable_Name,
-                                            Target => Current_Token.Identifier));
+                  Import_Variables.Append
+                    ((Source => Variable_Name,
+                      Target => Current_Token.Identifier));
                   Next_Token (Scanner, Input, Current_Token, Settings);
                else
-                  Import_Variables.Append ((Source => Variable_Name,
-                                            Target => Null_Unbounded_String));
+                  Import_Variables.Append
+                    ((Source => Variable_Name,
+                      Target => Null_Unbounded_String));
                end if;
                if Current_Token.Kind /= Comma_Token then
                   exit;
                end if;
             end loop;
-            Result := (Kind => From_Import_Statement,
-                       From_File_Name => File_Name,
-                       Import_Variable_Names => Import_Variables);
-         when others =>
-            raise Template_Error with "unexpected token "
-              & Current_Token.Kind'Image;
+            Result :=
+              (Kind                  => From_Import_Statement,
+               From_File_Name        => File_Name,
+               Import_Variable_Names => Import_Variables);
+
+         when others                =>
+            raise Template_Error
+              with "unexpected token " & Current_Token.Kind'Image;
       end case;
       Current_Token := Jintp.Scanner.Current_Token (Scanner);
       if Current_Token.Kind /= Statement_End_Token then
-         raise Template_Error with "end of statement expected, got "
-           & Current_Token.Kind'Image;
+         raise Template_Error
+           with "end of statement expected, got " & Current_Token.Kind'Image;
       end if;
       End_Modifier := Current_Token.Modifier;
    end Parse;
 
-   function Parse_Endraw  (Input : in out Character_Iterator'Class;
-                           Settings : Environment'Class)
-                           return Boolean
+   function Parse_Endraw
+     (Input : in out Character_Iterator'Class; Settings : Environment'Class)
+      return Boolean
    is
-      Scanner : Scanner_State;
+      Scanner       : Scanner_State;
       Current_Token : Token;
    begin
       Next_Token (Scanner, Input, Current_Token, Settings);
