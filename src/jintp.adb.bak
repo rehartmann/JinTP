@@ -2057,15 +2057,12 @@ package body Jintp is
    procedure Insert_Value (Container : in out Dictionary;
                      Key : Unbounded_String;
                      New_Item : Expression_Value) is
-      K : constant Expression_Value :=
-        (Kind => String_Expression_Value, S => Key);
    begin
       Init (Container);
-      if Contains (Container.Assocs.Value_Assocs, K) then
-         Replace (Container.Assocs.Value_Assocs, K, New_Item);
-      else
-         Include (Container.Assocs.Value_Assocs, K, New_Item);
-      end if;
+      Include (Container.Assocs.Value_Assocs,
+              (Kind => String_Expression_Value,
+               S => Key),
+              New_Item);
    end Insert_Value;
 
    procedure Process_Control_Block_Elements
@@ -2111,16 +2108,8 @@ package body Jintp is
          case Current_Element.Kind is
             when Statement_Element =>
                case Current_Element.Stmt.Kind is
-                  when Elif_Statement | Else_Statement =>
-                     --  Elif and Else are transitions within an
-                     --  enclosing if-block, not closing keywords.
-                     --  They only signal a stopping point when the
-                     --  enclosing block is the one we are skipping
-                     --  at the current level.
-                     if Level = 0 then
-                        exit;
-                     end if;
-                  when Endif_Statement | Endfor_Statement =>
+                  when Endif_Statement | Elif_Statement | Else_Statement
+                       | Endfor_Statement =>
                      if Level = 0 then
                         exit;
                      end if;
@@ -2336,9 +2325,6 @@ package body Jintp is
                Set_Loop_Index0 (Loop_Resolver, Loop_Index0);
                Process_Control_Block_Elements (Current, Out_Buffer, Loop_Resolver);
                Loop_Index0 := Loop_Index0 + 1;
-               Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error,
-                  "ITER idx=" & Loop_Index0'Image
-                  & " buflen=" & Natural'Image (Length (Out_Buffer)));
                Empty_Loop := False;
             end if;
          end loop;
