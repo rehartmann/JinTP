@@ -2143,29 +2143,56 @@ package body Jintp is
       Out_Buffer : in out Unbounded_String;
       Resolver : in out Context)
    is
-      Condition_Value : constant Boolean := Evaluate_Boolean
-        (Condition, Resolver);
       Element : Template_Element;
+      Branch_Taken : Boolean := False;
    begin
-      if Condition_Value then
+      --  Evaluate the initial if condition. On true, process the
+      --  body; on false, skip it. Either way, the cursor ends up
+      --  on the first elif, else, or endif that follows.
+      if Evaluate_Boolean (Condition, Resolver) then
          Next (Current);
          Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
-         Element := Template_Element_Vectors.Element (Current);
-         if Element.Kind = Statement_Element
-           and then Element.Stmt.Kind = Else_Statement
-         then
-            Skip_Control_Block_Elements (Current);
-         end if;
+         Branch_Taken := True;
       else
          Skip_Control_Block_Elements (Current);
-         Element := Template_Element_Vectors.Element (Current);
-         if Element.Kind = Statement_Element
-           and then Element.Stmt.Kind = Else_Statement
-         then
-            Next (Current);
-            Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
-         end if;
       end if;
+
+      --  Walk successive elif/else branches. Once a branch is taken,
+      --  remaining branches are skipped by the same skip routine.
+      loop
+         Element := Template_Element_Vectors.Element (Current);
+
+         exit when Element.Kind /= Statement_Element;
+         exit when Element.Stmt.Kind = Endif_Statement;
+
+         if Element.Stmt.Kind = Elif_Statement then
+            if Branch_Taken then
+               Skip_Control_Block_Elements (Current);
+            else
+               Next (Current);
+               if Evaluate_Boolean (Element.Stmt.If_Condition.all, Resolver) then
+                  Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
+                  Branch_Taken := True;
+               else
+                  Skip_Control_Block_Elements (Current);
+               end if;
+            end if;
+
+         elsif Element.Stmt.Kind = Else_Statement then
+            if Branch_Taken then
+               Skip_Control_Block_Elements (Current);
+            else
+               Next (Current);
+               Process_Control_Block_Elements (Current, Out_Buffer, Resolver);
+               Branch_Taken := True;
+            end if;
+
+         else
+            --  Unexpected statement kind in this position.
+            Skip_Control_Block_Elements (Current);
+         end if;
+      end loop;
+      --  Cursor is now on endif.
    exception
       when Constraint_Error =>
          raise Template_Error with "unbalanced 'if'";
