@@ -3449,13 +3449,23 @@ package body Jintp is
    procedure Insert
      (Container : in out Dictionary;
       Key       : Unbounded_String;
-      New_Item  : List'Class) is
+      New_Item  : List'Class)
+   is
+      Empty_Item : List;
    begin
       Init (Container);
-      Include
-        (Container.Assocs.Value_Assocs,
-         (Kind => String_Expression_Value, S => Key),
-         (Kind => List_Expression_Value, List_Value => List (New_Item)));
+      if New_Item.Elements = null then
+         Init (Empty_Item);
+         Include
+           (Container.Assocs.Value_Assocs,
+            (Kind => String_Expression_Value, S => Key),
+            (Kind => List_Expression_Value, List_Value => Empty_Item));
+      else
+         Include
+           (Container.Assocs.Value_Assocs,
+            (Kind => String_Expression_Value, S => Key),
+            (Kind => List_Expression_Value, List_Value => List (New_Item)));
+      end if;
    end Insert;
 
    procedure Insert
